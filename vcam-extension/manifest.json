@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "CSS VTuber Camera",
+  "version": "1.0",
+  "description": "CSS VTuberモデルを Google Meet / YouTube Live(ウェブカメラ配信) のカメラとして使う仮想カメラ",
+  "permissions": ["tabs"],
+  "background": { "service_worker": "bg.js" },
+  "content_scripts": [
+    {
+      "matches": ["https://meet.google.com/*", "https://*.youtube.com/*"],
+      "js": ["site-main.js"],
+      "world": "MAIN",
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["https://meet.google.com/*", "https://*.youtube.com/*"],
+      "js": ["site-isolated.js"],
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["http://localhost:8321/*"],
+      "js": ["viewer.js"]
+    }
+  ]
+}

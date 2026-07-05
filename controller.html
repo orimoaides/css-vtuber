@@ -1,0 +1,647 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CSS VTuber Controller</title>
+<style>
+/* =====================================================================
+   CSS VTuber Controller — モデルを動かすアプリ
+   モデル本体(css-vtuber.html?obs)をiframeで表示し、postMessageで
+   表情クラス/CSS変数/アイドルアニメclassを注入する。
+   JSの役割はモデルと同じ思想: 状態管理と注入のみ、描画はすべてCSS側。
+
+   起動モード:
+     controller.html          … モデル表示+操作パネル (通常)
+     controller.html?viewer   … モデル表示のみの別窓 (コントローラーから遠隔操作)
+   ===================================================================== */
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden}
+body{display:flex;font-family:'Segoe UI',system-ui,sans-serif;background:#f6f1e7}
+
+/* ===== モデル表示エリア ===== */
+#viewport{flex:1;position:relative;overflow:hidden;
+  background:radial-gradient(rgba(127,47,22,.06) 3px,transparent 3.5px) 0 0/40px 40px,#f6f1e7}
+#viewport iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:transparent}
+/* マウス追従ON中のカーソル表示 */
+#viewport.follow{cursor:crosshair}
+
+/* ===== 操作パネル (エディタと同じ配色系) ===== */
+#panel{width:300px;max-height:100vh;overflow-y:auto;background:#fff;
+  border-left:2px solid #e5ddcf;padding:16px 18px 32px;flex-shrink:0}
+body.viewer #panel{display:none}
+#panel h1{font-size:15px;margin:0 0 4px;color:#241d18}
+#panel .hint{font-size:11px;color:#8a8175;margin:0 0 12px;line-height:1.7}
+#panel h2{font-size:12px;margin:18px 0 8px;color:#f5741d;
+  border-bottom:2px solid #f6e3d2;padding-bottom:4px;letter-spacing:.05em}
+.row{display:flex;align-items:center;gap:8px;margin:7px 0;font-size:12px;color:#40382f}
+.row label{width:86px;flex-shrink:0}
+.row input[type=range]{flex:1;accent-color:#f5741d;min-width:0}
+.row output{width:38px;text-align:right;font-variant-numeric:tabular-nums;color:#8a8175}
+.grid{display:flex;flex-wrap:wrap;gap:6px}
+.grid button{font-size:12px;padding:5px 10px;border:2px solid #241d18;border-radius:8px;
+  background:#fff;cursor:pointer;color:#241d18}
+.grid button:hover{background:#ffe9d6}
+.grid button.on{background:#f5741d;border-color:#f5741d;color:#fff}
+.grid button b{color:#f5741d;font-weight:700;margin-right:3px}
+.grid button.on b{color:#fff}
+.toggles{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:#40382f}
+.toggles label{display:flex;align-items:center;gap:5px;cursor:pointer}
+.toggles input{accent-color:#f5741d}
+#panel .act{display:block;width:100%;margin-top:8px;font-size:12px;padding:6px 10px;
+  border:2px solid #241d18;border-radius:8px;background:#fff;cursor:pointer;color:#241d18}
+#panel .act:hover{background:#ffe9d6}
+#panel .act.primary{background:#f5741d;border-color:#f5741d;color:#fff}
+#panel .act.primary:hover{background:#e0630e}
+#camStat{font-size:11px;color:#8a8175;margin-top:4px}
+</style>
+</head>
+<body>
+
+<div id="viewport" class="follow">
+  <iframe id="frame" src="css-vtuber.html?obs" allow="camera; microphone" title="vtuber model"></iframe>
+</div>
+
+<aside id="panel">
+  <h1>モデルコントローラー</h1>
+  <p class="hint">
+    モデルの上でマウスを動かすと視線と首が追従。<br>
+    Space長押し: 口を開く / 1〜0・Q・W・E・R: 表情<br>
+    Z・X・C・V: ポーズ / A〜H: エモート<br>
+    M: ノリノリ / N・B: アイテム
+  </p>
+
+  <h2>表情</h2>
+  <div class="grid" id="expBtns">
+    <button data-exp="" class="on"><b>1</b>通常</button>
+    <button data-exp="smile"><b>2</b>にっこり</button>
+    <button data-exp="bikkuri"><b>3</b>びっくり</button>
+    <button data-exp="jito"><b>4</b>ジト目</button>
+    <button data-exp="angry"><b>5</b>怒り</button>
+    <button data-exp="sad"><b>6</b>困り</button>
+    <button data-exp="close"><b>7</b>目閉じ</button>
+    <button data-exp="wink"><b>8</b>ウィンク</button>
+    <button data-exp="tere"><b>9</b>照れ</button>
+    <button data-exp="doya"><b>0</b>ドヤ</button>
+    <button data-exp="nemui"><b>Q</b>ねむい</button>
+    <button data-exp="guru"><b>W</b>目回し</button>
+    <button data-exp="heart"><b>E</b>ハート目</button>
+    <button data-exp="star"><b>R</b>星目</button>
+  </div>
+
+  <h2>ポーズ</h2>
+  <div class="grid" id="poseBtns">
+    <button data-pose="raise-l"><b>Z</b>左手上げ</button>
+    <button data-pose="raise-r"><b>X</b>右手上げ</button>
+    <button data-pose="wave"><b>C</b>バイバイ</button>
+    <button data-pose="think"><b>V</b>考える</button>
+    <button data-pose="front"><b>J</b>手を前に</button>
+  </div>
+  <p class="hint" style="margin-top:6px">左右両方ONでばんざい。カメラON中は手の検出が優先されます</p>
+
+  <h2>エモート (1回ポップ)</h2>
+  <div class="grid" id="emoBtns">
+    <button data-emo="heart"><b>A</b>❤</button>
+    <button data-emo="anger"><b>S</b>💢</button>
+    <button data-emo="sweat"><b>D</b>💦</button>
+    <button data-emo="ex"><b>F</b>❗</button>
+    <button data-emo="q"><b>G</b>❓</button>
+    <button data-emo="zzz"><b>H</b>zzZ</button>
+  </div>
+  <p class="hint" style="margin-top:6px">照れ/怒り/びっくり/困り/ねむい表情には自動でエモートが付きます</p>
+
+  <h2>CSS芸 (一発演出)</h2>
+  <div class="grid" id="fxBtns">
+    <button data-fx="scatter"><b>T</b>ばらける!</button>
+    <button data-fx="glitch"><b>Y</b>グリッチ</button>
+    <button data-fx="spin"><b>U</b>くるん</button>
+    <button data-fx="boing"><b>I</b>ぴょん</button>
+    <button data-fx="jelly"><b>O</b>ぷるぷる</button>
+    <button data-fx="melt"><b>P</b>とける</button>
+    <button data-fx="clone"><b>K</b>ぶんしん</button>
+    <button data-fx="rainbow"><b>L</b>にじいろ</button>
+  </div>
+  <p class="hint" style="margin-top:6px">顔パーツの拡散→集合など、CSS描画ならではの演出。連打OK</p>
+
+  <h2>ノリノリ / アイテム</h2>
+  <div class="grid">
+    <button id="grooveBtn"><b>M</b>🎵ノリノリ</button>
+    <button data-item="cup"><b>N</b>☕マグカップ</button>
+    <button data-item="light"><b>B</b>🔦ペンライト</button>
+  </div>
+  <div class="row" style="margin-top:6px"><label>テンポ</label><input type="range" id="bpmSl" min="70" max="180" value="120"><output>120</output></div>
+  <p class="hint" style="margin-top:6px">ノリノリ中にペンライトを持たせると振ります</p>
+
+  <h2>手動操作</h2>
+  <div class="toggles" style="margin-bottom:6px">
+    <label><input type="checkbox" id="followChk" checked> マウス追従 (首+視線)</label>
+  </div>
+  <div class="row"><label>首かしげ</label><input type="range" id="rollSl" min="-100" max="100" value="0"><output>0</output></div>
+  <div class="row"><label>目の開き</label><input type="range" id="eyeSl" min="0" max="100" value="100"><output>1</output></div>
+  <div class="row"><label>口の開き</label><input type="range" id="mouthSl" min="0" max="100" value="0"><output>0</output></div>
+  <div class="row"><label>ズーム</label><input type="range" id="zoomSl" min="30" max="200" value="100"><output>1</output></div>
+
+  <h2>自動アニメ</h2>
+  <div class="toggles" id="animChks">
+    <label><input type="checkbox" data-anim="auto-blink" checked> まばたき</label>
+    <label><input type="checkbox" data-anim="auto-gaze" checked> 目の泳ぎ</label>
+    <label><input type="checkbox" data-anim="idle-bob" checked> 浮遊</label>
+    <label><input type="checkbox" data-anim="idle-breathe" checked> 呼吸</label>
+    <label><input type="checkbox" data-anim="hair-sway" checked> 髪ゆれ</label>
+    <label><input type="checkbox" data-anim="hair-follow" checked> 髪の遅延追従</label>
+    <label><input type="checkbox" data-anim="arm-swing" checked> 腕スイング</label>
+    <label><input type="checkbox" data-anim="body-sway" checked> 体の揺れ</label>
+  </div>
+
+  <h2>音声リップシンク</h2>
+  <button class="act" id="micBtn">🎤 マイクで口パク</button>
+  <div class="row" style="margin-top:6px"><label>感度</label><input type="range" id="micSl" min="2" max="24" value="9"><output>9</output></div>
+  <p class="hint">カメラなしでも声で口が動く。カメラ併用時は大きい方が反映されます</p>
+
+  <h2>カラーテーマ</h2>
+  <div class="grid" id="themeBtns"></div>
+  <div class="row" style="margin-top:6px"><label>髪色</label><input type="color" id="hairCol" value="#f5741d">
+    <label style="min-width:auto">服</label><input type="color" id="teeCol" value="#ececec"></div>
+
+  <h2>フェイストラッキング</h2>
+  <button class="act primary" id="camBtn">カメラで動かす</button>
+  <p id="camStat">停止中 (開始するとマウス追従はOFF)</p>
+  <button class="act" id="recenterBtn">📐 正面をリセット</button>
+  <p class="hint" style="margin-top:4px">起動直後の姿勢が「正面」になります。
+    モデルが傾いて見えるときは、カメラに正面を向いてからこのボタン</p>
+  <div class="row" style="margin-top:8px"><label>まばたき感度</label><input type="range" id="gainSl" min="60" max="300" value="140"><output>1.4</output></div>
+  <div class="row"><label>反応速度</label><input type="range" id="smoothSl" min="5" max="50" value="15"><output>0.15</output></div>
+  <div class="toggles" style="margin-top:4px">
+    <label><input type="checkbox" id="poseChk" checked> カメラで手も検出 (ポーズ連動)</label>
+  </div>
+  <p class="hint" style="margin-top:6px">目の開きは「普段の開き具合」を自動で覚えて正規化します。
+    半目になりがちなら、まばたき感度を下げてみてください</p>
+
+  <h2>表示</h2>
+  <div class="row" style="margin-bottom:6px"><label>モデル</label>
+    <select id="modelSel" style="flex:1;min-width:0;font-size:12px">
+      <option value="orimo">orimo君</option>
+      <option value="chochin">提灯おばけ</option>
+      <option value="buchitama">ぶちたま</option>
+      <option value="nikusuke">にくすけ</option>
+      <option value="binzo">びんぞう</option>
+      <option value="kurage">くらげちゃん</option>
+    </select>
+  </div>
+  <div class="toggles" style="margin-bottom:6px">
+    <label><input type="checkbox" id="flipChk"> モデルを左右反転 (ミラー)</label>
+  </div>
+  <p class="hint" style="margin:0 0 6px">Meetのセルフビューは鏡映しなので、反転して送ると
+    自分のプレビューでは元の向きに見えます (相手には反転が伝わります)</p>
+  <button class="act" id="detachBtn">モデルを別窓で開く</button>
+  <p class="hint" style="margin-top:6px">別窓にも操作が同時に反映されます。別窓側はモデルのみの表示。</p>
+</aside>
+
+<script>
+const $ = id => document.getElementById(id);
+const QP = new URLSearchParams(location.search);
+const VIEWER = QP.has('viewer');
+const frame = $('frame');
+/* キャラモデルの一覧 (増やすときはここに追記) */
+const MODELS = {
+  orimo: 'css-vtuber.html',
+  chochin: 'css-vtuber-chochin.html',
+  buchitama: 'css-vtuber-buchitama.html',
+  nikusuke: 'css-vtuber-nikusuke.html',
+  binzo: 'css-vtuber-binzo.html',
+  kurage: 'css-vtuber-kurage.html'
+};
+/* ビューアが自iframeへ転送してよいメッセージ。'cam' は含めない
+   (カメラはcontroller側モデルだけが起動し、結果は 'track' で中継される) */
+const ALLOW = ['exp','var','vars','anim','pose','emo','item','fx','cfg','track'];
+/* 別窓連携用チャンネル: opener経由のpostMessageに加えて、
+   開き方によらず同一ブラウザ内で届くBroadcastChannelでも同期する */
+const bc = new BroadcastChannel('cssvtuber-ctrl');
+
+/* ===== ビューアモード: 受け取ったメッセージをモデルiframeへ転送するだけ ===== */
+if (VIEWER) {
+  document.body.classList.add('viewer');
+  document.title = 'CSS VTuber Viewer';
+  /* 背景指定: ?bg=transparent | ?bg=00ff00 (OBS取り込み/仮想カメラ/クロマキー用) */
+  const bg = QP.get('bg');
+  if (bg) {
+    const v = bg === 'transparent' ? 'transparent'
+            : /^[0-9a-f]{3,8}$/i.test(bg) ? '#' + bg : bg;
+    document.body.style.background = v;
+    document.getElementById('viewport').style.background = v;
+  }
+  /* 仮想カメラ拡張の検知: 拡張のcontent scriptがマーカーを付ける。
+     2秒待っても無ければ、🎥ボタンが出ない理由を画面に案内する */
+  setTimeout(() => {
+    if (document.documentElement.dataset.cssvtubercam) return;
+    const tip = document.createElement('div');
+    tip.style.cssText =
+      'position:fixed;left:10px;bottom:10px;z-index:99999;max-width:340px;' +
+      'padding:10px 14px;font-size:12px;line-height:1.7;color:#40382f;' +
+      'background:#fffdf5;border:2px solid #d9c9a8;border-radius:10px';
+    tip.innerHTML =
+      '<b>仮想カメラ拡張が見つかりません</b><br>' +
+      '・この窓は <b>Chrome</b> ですか? (既定ブラウザがEdgeだとEdgeで開きます)<br>' +
+      '・chrome://extensions で「CSS VTuber Camera」がON+🔄更新済みか<br>' +
+      '・確認後、この窓を開き直してください';
+    document.body.appendChild(tip);
+  }, 2000);
+
+  /* ===== 撮影範囲 (仮想カメラのフレーミング) =====
+     iframeをscaleで拡大し、transform-originの縦%でどの高さを映すか決める。
+     ビューア窓ローカルの設定としてlocalStorageに保存 (コントローラーとは独立) */
+  const FR_KEY = 'cssvtuber-viewer-frame';
+  const FR_PRESET = {full: {z: 1, oy: 18}, bust: {z: 2, oy: 14}, face: {z: 3.2, oy: 10}};
+  let fr = {z: 1, oy: 18};
+  try { fr = Object.assign(fr, JSON.parse(localStorage.getItem(FR_KEY) || '{}')); } catch (_) {}
+  const gear = document.createElement('button');
+  gear.textContent = '⚙ 撮影範囲';
+  gear.style.cssText = 'position:fixed;right:10px;bottom:10px;z-index:99998;padding:6px 10px;' +
+    'font-size:12px;color:#40382f;border:2px solid #d9c9a8;border-radius:10px;' +
+    'background:rgba(255,253,245,.92);cursor:pointer;transition:opacity .4s';
+  const frUI = document.createElement('div');
+  frUI.style.cssText = 'position:fixed;right:10px;bottom:44px;z-index:99998;font-size:12px;' +
+    'background:rgba(255,253,245,.95);border:2px solid #d9c9a8;border-radius:10px;' +
+    'padding:10px 12px;color:#40382f;display:none;width:212px';
+  frUI.innerHTML =
+    '<b>撮影範囲</b>' +
+    '<div style="display:flex;gap:6px;margin:8px 0">' +
+      '<button data-fr="full">全身</button><button data-fr="bust">バスト</button>' +
+      '<button data-fr="face">顔アップ</button></div>' +
+    '<label>倍率 <input id="frZ" type="range" min="100" max="380" style="width:130px;vertical-align:middle"></label><br>' +
+    '<label>上下 <input id="frY" type="range" min="0" max="60" style="width:130px;vertical-align:middle"></label>';
+  document.body.appendChild(gear);
+  document.body.appendChild(frUI);
+  function applyFrame(){
+    frame.style.transformOrigin = '50% ' + fr.oy + '%';
+    frame.style.transform = fr.z === 1 ? '' : 'scale(' + fr.z + ')';
+    frUI.querySelector('#frZ').value = Math.round(fr.z * 100);
+    frUI.querySelector('#frY').value = fr.oy;
+    localStorage.setItem(FR_KEY, JSON.stringify(fr));
+  }
+  gear.addEventListener('click', () =>
+    frUI.style.display = frUI.style.display === 'none' ? 'block' : 'none');
+  frUI.querySelectorAll('[data-fr]').forEach(b =>
+    b.addEventListener('click', () => { fr = Object.assign({}, FR_PRESET[b.dataset.fr]); applyFrame(); }));
+  frUI.querySelector('#frZ').addEventListener('input', e => { fr.z = e.target.value / 100; applyFrame(); });
+  frUI.querySelector('#frY').addEventListener('input', e => { fr.oy = +e.target.value; applyFrame(); });
+  applyFrame();
+  /* 配信映像を汚さないよう、しばらく操作がないとUIを自動で隠す */
+  let frHideT = 0;
+  const frPoke = () => {
+    gear.style.opacity = '1';
+    clearTimeout(frHideT);
+    frHideT = setTimeout(() => { gear.style.opacity = '0'; frUI.style.display = 'none'; }, 3000);
+  };
+  window.addEventListener('pointermove', frPoke);
+  frPoke();
+
+  const fwd = m => {
+    if (!m || typeof m !== 'object') return;
+    if (m.type === 'model' && MODELS[m.name]) {
+      const src = MODELS[m.name] + '?obs';
+      if (frame.getAttribute('src') !== src) frame.src = src;
+      return;
+    }
+    if (ALLOW.includes(m.type)) frame.contentWindow.postMessage(m, '*');
+  };
+  bc.onmessage = ev => fwd(ev.data);                           /* controllerからのBC同期 */
+  window.addEventListener('message', e => {
+    const m = e.data;
+    if (!m || typeof m !== 'object') return;
+    if (ALLOW.includes(m.type) || m.type === 'model') fwd(m);
+    else if (m.type === 'vtuber-ready') {
+      /* モデル準備完了 → controllerに状態を要求 (opener有無どちらでも届くように両方) */
+      try { bc.postMessage({type: 'viewer-ready'}); } catch (_) {}
+      if (window.opener) window.opener.postMessage({type: 'viewer-ready'}, '*');
+    }
+    else if (m.type === 'cam-state' && window.opener)
+      window.opener.postMessage(m, '*');                       /* カメラ成否を親へ中継 */
+  });
+}
+
+/* ===== コントローラーモード ===== */
+if (!VIEWER) {
+
+/* --- 状態: これを送るだけ。描画ロジックは全部モデル側CSS --- */
+const state = {
+  exp: '',
+  anims: {'auto-blink':true,'auto-gaze':true,'idle-bob':true,'idle-breathe':true,
+          'hair-sway':true,'hair-follow':true,'arm-swing':true,'body-sway':true,
+          'mode-groove':false},
+  poses: {'raise-l':false,'raise-r':false,'wave':false,'think':false,'front':false},
+  items: {cup:false, light:false},
+  cfg: {eyeGain:1.4, smooth:.15, pose:true},
+  vars: {'--roll':0,'--eye-open':1,'--zoom':1,'--beat':.5},
+  follow: true, cam: false
+};
+let viewerWin = null;
+
+/* ビューア(別窓)への中継: opener参照 + BroadcastChannel の二系統 */
+function relay(m){
+  if (viewerWin && !viewerWin.closed) { try { viewerWin.postMessage(m, '*'); } catch (_) {} }
+  try { bc.postMessage(m); } catch (_) {}
+}
+function send(m){
+  try { frame.contentWindow.postMessage(m, '*'); } catch (_) {}
+  relay(m);
+}
+bc.onmessage = ev => {
+  if (ev.data && ev.data.type === 'viewer-ready') sendAll();
+};
+function sendAll(){
+  send({type:'exp', name: state.exp});
+  Object.keys(state.anims).forEach(k => send({type:'anim', name:k, on: state.anims[k]}));
+  Object.keys(state.poses).forEach(k => send({type:'pose', name:k, on: state.poses[k]}));
+  Object.keys(state.items).forEach(k => send({type:'item', name:k, on: state.items[k]}));
+  Object.keys(state.cfg).forEach(k => send({type:'cfg', key:k, value: state.cfg[k]}));
+  send({type:'vars', vars: state.vars});
+}
+/* モデル(自分のiframe/別窓)の準備ができたら状態を流し込む。カメラ成否も受ける。
+   自iframeのトラッキング結果('track')は別窓へ中継する */
+window.addEventListener('message', e => {
+  const m = e.data, t = m && m.type;
+  if (t === 'vtuber-ready' || t === 'viewer-ready') sendAll();
+  else if (t === 'track' && e.source === frame.contentWindow) relay(m);
+  else if (t === 'cam-state') {
+    state.cam = !!m.on;
+    $('camBtn').textContent = state.cam ? 'カメラを停止' : 'カメラで動かす';
+    $('camStat').textContent = m.error ? 'エラー: ' + m.error
+      : state.cam ? 'トラッキング中 (マウス追従は休止)' : '停止中 (開始するとマウス追従はOFF)';
+  }
+});
+
+/* --- 表情: ボタン + ホットキー --- */
+const EXP_KEYS = {'1':'','2':'smile','3':'bikkuri','4':'jito','5':'angry','6':'sad',
+                  '7':'close','8':'wink','9':'tere','0':'doya','q':'nemui','w':'guru',
+                  'e':'heart','r':'star'};
+/* 表情に合わせて自動で出すエモート */
+const EXP_EMO = {tere:'heart', angry:'anger', bikkuri:'ex', nemui:'zzz', sad:'sweat'};
+function setExp(name){
+  state.exp = name;
+  send({type:'exp', name});
+  if (EXP_EMO[name]) send({type:'emo', name: EXP_EMO[name]});
+  document.querySelectorAll('#expBtns button').forEach(b =>
+    b.classList.toggle('on', b.dataset.exp === name));
+}
+document.querySelectorAll('#expBtns button').forEach(b =>
+  b.addEventListener('click', () => setExp(b.dataset.exp)));
+
+/* --- ポーズ: ボタン + ホットキー。左右両方の手上げ=ばんざい。
+       バイバイ単独ONのときはとりあえず右手を上げる --- */
+const POSE_KEYS = {z:'raise-l', x:'raise-r', c:'wave', v:'think', j:'front'};
+function togglePose(name){
+  state.poses[name] = !state.poses[name];
+  if (name === 'wave' && state.poses.wave && !state.poses['raise-l'] && !state.poses['raise-r']) {
+    state.poses['raise-r'] = true;
+    send({type:'pose', name:'raise-r', on:true});
+  }
+  send({type:'pose', name, on: state.poses[name]});
+  document.querySelectorAll('#poseBtns button').forEach(b =>
+    b.classList.toggle('on', state.poses[b.dataset.pose]));
+}
+document.querySelectorAll('#poseBtns button').forEach(b =>
+  b.addEventListener('click', () => togglePose(b.dataset.pose)));
+
+/* --- エモート (ワンショット) --- */
+const EMO_KEYS = {a:'heart', s:'anger', d:'sweat', f:'ex', g:'q', h:'zzz'};
+document.querySelectorAll('#emoBtns button').forEach(b =>
+  b.addEventListener('click', () => send({type:'emo', name: b.dataset.emo})));
+
+/* --- CSS芸FX (ワンショット) --- */
+const FX_KEYS = {t:'scatter', y:'glitch', u:'spin', i:'boing',
+                 o:'jelly', p:'melt', k:'clone', l:'rainbow'};
+document.querySelectorAll('#fxBtns button').forEach(b =>
+  b.addEventListener('click', () => send({type:'fx', name: b.dataset.fx})));
+
+/* --- ノリノリモード + テンポ --- */
+function toggleGroove(){
+  state.anims['mode-groove'] = !state.anims['mode-groove'];
+  send({type:'anim', name:'mode-groove', on: state.anims['mode-groove']});
+  $('grooveBtn').classList.toggle('on', state.anims['mode-groove']);
+}
+$('grooveBtn').addEventListener('click', toggleGroove);
+$('bpmSl').addEventListener('input', e => {
+  const bpm = +e.target.value;
+  state.vars['--beat'] = +(60 / bpm).toFixed(3);
+  send({type:'var', key:'--beat', value: state.vars['--beat']});
+  e.target.parentElement.querySelector('output').textContent = bpm;
+});
+
+/* --- アイテム --- */
+const ITEM_KEYS = {n:'cup', b:'light'};
+function toggleItem(name){
+  state.items[name] = !state.items[name];
+  send({type:'item', name, on: state.items[name]});
+  document.querySelectorAll('[data-item]').forEach(b =>
+    b.classList.toggle('on', state.items[b.dataset.item]));
+}
+document.querySelectorAll('[data-item]').forEach(b =>
+  b.addEventListener('click', () => toggleItem(b.dataset.item)));
+
+/* --- カラーテーマ: CSS変数を差し替えるだけなので一瞬 --- */
+const THEMES = [
+  {name:'オレンジ', hair:'#f5741d', line:'#7f2f16', tee:'#ececec'},
+  {name:'くろ',     hair:'#4a4440', line:'#241d18', tee:'#e8e2d8'},
+  {name:'きん',     hair:'#f2c04a', line:'#8a5f1a', tee:'#f4f4f4'},
+  {name:'ピンク',   hair:'#f078ac', line:'#8a3a5e', tee:'#fff0f5'},
+  {name:'みず',     hair:'#64c3ea', line:'#2b6b8c', tee:'#f4f9ff'},
+  {name:'みどり',   hair:'#86c95c', line:'#3f6b2a', tee:'#f7f7ec'}
+];
+function applyTheme(t){
+  state.vars['--hair'] = t.hair; state.vars['--line'] = t.line; state.vars['--tee'] = t.tee;
+  send({type:'vars', vars: {'--hair': t.hair, '--line': t.line, '--tee': t.tee}});
+  $('hairCol').value = t.hair; $('teeCol').value = t.tee;
+}
+THEMES.forEach(t => {
+  const b = document.createElement('button');
+  b.textContent = t.name;
+  b.style.borderColor = t.hair;
+  b.style.boxShadow = 'inset 0 -3px 0 ' + t.hair;
+  b.addEventListener('click', () => applyTheme(t));
+  $('themeBtns').appendChild(b);
+});
+$('hairCol').addEventListener('input', e => {
+  state.vars['--hair'] = e.target.value;
+  send({type:'var', key:'--hair', value: e.target.value});
+});
+$('teeCol').addEventListener('input', e => {
+  state.vars['--tee'] = e.target.value;
+  send({type:'var', key:'--tee', value: e.target.value});
+});
+
+/* --- 音声リップシンク: マイクRMS → --mic (口はモデル側でカメラとmax合成) --- */
+let mic = null, micGain = 9;
+$('micSl').addEventListener('input', e => {
+  micGain = +e.target.value;
+  e.target.parentElement.querySelector('output').textContent = micGain;
+});
+$('micBtn').addEventListener('click', async () => {
+  if (mic) {
+    mic.stream.getTracks().forEach(t => t.stop());
+    mic.ctx.close().catch(() => {});
+    mic = null;
+    send({type:'var', key:'--mic', value: 0});
+    $('micBtn').textContent = '🎤 マイクで口パク';
+    $('micBtn').classList.remove('on');
+    return;
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({audio: {echoCancellation: true}});
+    const ctx = new AudioContext();
+    const an = ctx.createAnalyser();
+    an.fftSize = 512;
+    ctx.createMediaStreamSource(stream).connect(an);
+    mic = {stream, ctx, an, buf: new Float32Array(an.fftSize), sm: 0};
+    $('micBtn').textContent = '🎤 マイク停止';
+    $('micBtn').classList.add('on');
+  } catch (err) {
+    $('micBtn').textContent = '🎤 マイク不可: ' + err.name;
+  }
+});
+function micLevel(){
+  if (!mic) return null;
+  mic.an.getFloatTimeDomainData(mic.buf);
+  let s = 0;
+  for (let i = 0; i < mic.buf.length; i++) s += mic.buf[i] * mic.buf[i];
+  const rms = Math.sqrt(s / mic.buf.length);
+  const lv = Math.min(1, Math.max(0, (rms - .015) * micGain));
+  mic.sm = Math.max(lv, mic.sm * .82);   /* アタック速く・リリースゆっくり */
+  return +mic.sm.toFixed(3);
+}
+
+/* --- マウス追従: rAFループでlerp平滑化して首+視線の変数を注入 --- */
+const follow = {tx:0, ty:0, x:0, y:0, mouth:0, mouthT:0};
+const viewport = $('viewport');
+viewport.addEventListener('pointermove', e => {
+  if (!state.follow || state.cam) return;
+  const r = viewport.getBoundingClientRect();
+  follow.tx = Math.max(-1, Math.min(1, (e.clientX - r.left - r.width/2) / (r.width/2)));
+  follow.ty = Math.max(-1, Math.min(1, (e.clientY - r.top - r.height/2) / (r.height/2)));
+});
+viewport.addEventListener('pointerleave', () => { follow.tx = 0; follow.ty = 0; });
+(function loop(){
+  requestAnimationFrame(loop);
+  const lv = micLevel();                       /* マイク口パクはカメラ中も動かす */
+  if (state.cam) {
+    if (lv !== null) send({type:'vars', vars: {'--mic': lv}});
+    return;                                    /* 首・目はトラッキングに譲る */
+  }
+  follow.x += (follow.tx - follow.x) * .13;
+  follow.y += (follow.ty - follow.y) * .13;
+  follow.mouth += (follow.mouthT - follow.mouth) * .3;
+  const v = {'--mouth-open': +follow.mouth.toFixed(3)};
+  if (lv !== null) v['--mic'] = lv;
+  if (state.follow) {
+    v['--yaw'] = +follow.x.toFixed(3);
+    v['--pitch'] = +(follow.y * .7).toFixed(3);
+    v['--pupil-x'] = +follow.x.toFixed(3);
+    v['--pupil-y'] = +follow.y.toFixed(3);
+  }
+  send({type:'vars', vars: v});
+})();
+$('followChk').addEventListener('change', e => {
+  state.follow = e.target.checked;
+  viewport.classList.toggle('follow', state.follow);
+  if (!state.follow) send({type:'vars', vars:{'--yaw':0,'--pitch':0,'--pupil-x':0,'--pupil-y':0}});
+});
+
+/* --- Space長押しで口パク --- */
+window.addEventListener('keydown', e => {
+  if (/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) return;
+  if (e.key === ' ') { e.preventDefault(); follow.mouthT = 1; return; }
+  const k = e.key.toLowerCase();
+  if (EXP_KEYS[k] !== undefined) setExp(EXP_KEYS[k]);
+  else if (POSE_KEYS[k]) togglePose(POSE_KEYS[k]);
+  else if (EMO_KEYS[k]) send({type:'emo', name: EMO_KEYS[k]});
+  else if (FX_KEYS[k]) send({type:'fx', name: FX_KEYS[k]});
+  else if (ITEM_KEYS[k]) toggleItem(ITEM_KEYS[k]);
+  else if (k === 'm') toggleGroove();
+});
+window.addEventListener('keyup', e => { if (e.key === ' ') follow.mouthT = 0; });
+
+/* --- スライダー: CSS変数を直接注入 --- */
+function bindSlider(id, key, toVal, fmt){
+  const el = $(id), out = el.parentElement.querySelector('output');
+  el.addEventListener('input', () => {
+    const v = toVal(+el.value);
+    state.vars[key] = v;
+    send({type:'var', key, value: v});
+    out.textContent = fmt ? fmt(v) : v;
+  });
+}
+bindSlider('rollSl', '--roll', v => +(v/100).toFixed(2));
+bindSlider('eyeSl', '--eye-open', v => +(v/100).toFixed(2));
+bindSlider('mouthSl', '--mouth-open', v => +(v/100).toFixed(2));
+$('mouthSl').addEventListener('input', e => { follow.mouthT = follow.mouth = e.target.value/100; });
+bindSlider('zoomSl', '--zoom', v => +(v/100).toFixed(2));
+
+/* --- 自動アニメのON/OFF --- */
+document.querySelectorAll('#animChks input').forEach(el =>
+  el.addEventListener('change', () => {
+    state.anims[el.dataset.anim] = el.checked;
+    send({type:'anim', name: el.dataset.anim, on: el.checked});
+  }));
+
+/* --- トラッキング調整: 設定値をモデルへ注入 --- */
+function bindCfg(id, key, toVal){
+  const el = $(id), out = el.parentElement.querySelector('output');
+  el.addEventListener('input', () => {
+    const v = toVal(+el.value);
+    state.cfg[key] = v;
+    send({type:'cfg', key, value: v});
+    out.textContent = v;
+  });
+}
+bindCfg('gainSl', 'eyeGain', v => +(v/100).toFixed(2));
+bindCfg('smoothSl', 'smooth', v => +(v/100).toFixed(2));
+$('poseChk').addEventListener('change', e => {
+  state.cfg.pose = e.target.checked;
+  send({type:'cfg', key:'pose', value: e.target.checked});
+});
+$('recenterBtn').addEventListener('click', () => send({type:'cfg', key:'recenter', value: 1}));
+
+/* --- フェイストラッキング (モデル側のカメラを遠隔で開始/停止)。
+       実際のON/OFFはモデルからの cam-state 通知で確定する --- */
+$('camBtn').addEventListener('click', () => {
+  const want = !state.cam;
+  send({type:'cam', on: want});
+  $('camStat').textContent = want ? '起動中… (初回はモデルのDLで数秒かかります)' : '停止中';
+});
+
+/* --- 左右反転 (ミラー): --flip をモデルへ注入。別窓にも同期される --- */
+$('flipChk').addEventListener('change', e => {
+  state.vars['--flip'] = e.target.checked ? -1 : 1;
+  send({type:'var', key:'--flip', value: state.vars['--flip']});
+});
+
+/* --- キャラモデル切替: iframeを差し替え、別窓ビューアにも伝える。
+       新モデルの読み込み完了(vtuber-ready)で全状態が自動で再送される --- */
+const MODEL_KEY = 'cssvtuber-model';
+function setModel(name, init){
+  if (!MODELS[name]) name = 'orimo';
+  $('modelSel').value = name;
+  localStorage.setItem(MODEL_KEY, name);
+  if (state.cam) {   /* モデル差し替えでカメラは止まる */
+    state.cam = false;
+    $('camBtn').textContent = 'カメラで動かす';
+    $('camStat').textContent = '停止中 (モデル切替でカメラは止まりました)';
+  }
+  const src = MODELS[name] + '?obs';
+  if (!init || frame.getAttribute('src') !== src) frame.src = src;
+  relay({type:'model', name});
+}
+$('modelSel').addEventListener('change', e => setModel(e.target.value));
+setModel(QP.get('model') || localStorage.getItem(MODEL_KEY) || 'orimo', true);
+
+/* --- 別窓ビューア --- */
+$('detachBtn').addEventListener('click', () => {
+  if (viewerWin && !viewerWin.closed) { viewerWin.focus(); return; }
+  viewerWin = window.open('controller.html?viewer', 'vtviewer',
+    'width=420,height=760,menubar=no,toolbar=no,location=no');
+});
+
+}
+</script>
+</body>
+</html>
