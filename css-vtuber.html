@@ -689,6 +689,138 @@ body.obs #panel{display:none}
 #panel .act{display:block;width:100%;margin-top:8px}
 #panel .act.primary{background:#f5741d;border-color:#f5741d;color:#fff}
 #panel .act.primary:hover{background:#e0630e}
+
+/* ================= 変身スタジオ (henshin) ================= */
+/* 実写カメラ表示レイヤー。トラッキング用 #camVid とは別。ステージ全面・ミラー表示 */
+#camView{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;
+  transform:scaleX(-1);z-index:0;opacity:0;pointer-events:none;background:#12100e;
+  transition:opacity .55s ease, filter .5s ease}
+#stage.show-real #camView{opacity:1}
+/* デバッグ用の疑似「実写」背景 (カメラ無しでも変身シーケンスを確認できる。表示はshow-real時のみ) */
+#camView.debugbg{background:
+  radial-gradient(58% 78% at 50% 34%,#3d4d58 0%,#232a30 62%,#14181d 100%)}
+/* 実写モードではモデルを隠す (変身アニメ中は別途アニメが上書き) */
+#stage.show-real #model{opacity:0}
+#model{transition:opacity .45s ease}
+
+/* 白フラッシュ */
+#flash{position:absolute;inset:0;background:#fff;opacity:0;z-index:40;
+  pointer-events:none;mix-blend-mode:screen}
+#flash.on{animation:flashPulse .5s ease-out}
+@keyframes flashPulse{0%{opacity:0}12%{opacity:.96}100%{opacity:0}}
+
+/* 実写→M1: モデルを白シルエット化→段階的にカラーへ (だんだん変化) */
+#model.morph-in{animation:morphIn 1.05s ease-out}
+@keyframes morphIn{
+  0%  {filter:brightness(0) invert(1) blur(7px);transform:scale(calc(var(--zoom)*1.12));opacity:.15}
+  14% {filter:brightness(0) invert(1) blur(4px);transform:scale(calc(var(--zoom)*1.06));opacity:1}
+  30% {filter:brightness(0) invert(1) blur(4px);opacity:1}            /* 段1: 白シルエット保持 */
+  46% {filter:brightness(2.6) saturate(0) blur(3px)}                  /* 段2: 発光ゴースト */
+  60% {filter:brightness(2.6) saturate(0) blur(3px)}                  /* 保持でだんだん感 */
+  76% {filter:brightness(1.5) saturate(.45) blur(1px)}                /* 段3: 色が戻る */
+  90% {filter:brightness(1.08) saturate(1) blur(0);transform:scale(calc(var(--zoom)*1.03))}
+  100%{filter:none;transform:scale(var(--zoom))}
+}
+/* M1→実写: モデルが白シルエット化して光に消える */
+#model.morph-out{animation:morphOut .8s ease-in forwards}
+@keyframes morphOut{
+  0%  {filter:none;transform:scale(var(--zoom));opacity:1}
+  32% {filter:brightness(1.6) saturate(.4) blur(1px)}
+  56% {filter:brightness(3) saturate(0) blur(3px)}
+  78% {filter:brightness(0) invert(1) blur(4px);opacity:1;transform:scale(calc(var(--zoom)*1.05))}
+  100%{filter:brightness(0) invert(1) blur(8px);opacity:0;transform:scale(calc(var(--zoom)*1.12))}
+}
+/* 着地バウンド */
+#model.land{animation:land .45s cubic-bezier(.2,1.4,.3,1)}
+@keyframes land{0%{transform:scale(calc(var(--zoom)*1.06))}60%{transform:scale(calc(var(--zoom)*.96))}100%{transform:scale(var(--zoom))}}
+
+/* ビネット (チャージ暗転) */
+#vignette{position:absolute;inset:0;z-index:30;pointer-events:none;opacity:0;
+  background:radial-gradient(52% 56% at 50% 47%,transparent 0%,transparent 28%,rgba(9,7,5,.85) 100%)}
+
+/* FXキャンバス (炎・爆発) */
+#fxCanvas{position:absolute;inset:0;z-index:36;pointer-events:none}
+
+/* 画面ゆれ */
+#stage.shake{animation:shk .5s cubic-bezier(.36,.07,.19,.97)}
+@keyframes shk{
+  10%{transform:translate(-7px,-4px)}20%{transform:translate(8px,3px)}
+  30%{transform:translate(-9px,5px)}40%{transform:translate(7px,-6px)}
+  50%{transform:translate(-6px,4px)}60%{transform:translate(6px,3px)}
+  70%{transform:translate(-4px,-3px)}80%{transform:translate(3px,2px)}100%{transform:translate(0,0)}}
+
+/* テロップ / 演出窓 */
+#telop{position:absolute;left:50%;bottom:78px;transform:translateX(-50%) translateY(18px);
+  min-width:min(560px,86%);max-width:86%;z-index:45;opacity:0;pointer-events:none;
+  transition:opacity .25s ease,transform .25s ease;text-align:center;
+  background:linear-gradient(#213150,#15223a);color:#fff;border:3px solid #fff;
+  border-radius:14px;box-shadow:0 6px 0 rgba(0,0,0,.35),0 0 0 3px #15223a;
+  padding:15px 22px;font:800 21px/1.35 "Hiragino Sans",sans-serif;
+  letter-spacing:.05em;text-shadow:0 2px 0 rgba(0,0,0,.45)}
+#telop.on{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* 召喚珠 (紅白でないおりも配色) */
+#summonBall{position:absolute;left:50%;top:44%;width:92px;height:92px;z-index:38;
+  margin:-46px 0 0 -46px;border-radius:50%;opacity:0;pointer-events:none;
+  background:radial-gradient(28% 26% at 34% 30%,rgba(255,255,255,.6) 0 40%,transparent 62%),
+    linear-gradient(#F2B33C 0 50%,#5E7E7A 50% 100%);
+  border:4px solid #292826;box-shadow:inset 0 0 0 5px #E85D26,0 8px 14px rgba(0,0,0,.35)}
+#summonBall::after{content:"";position:absolute;left:8%;right:8%;top:calc(50% - 5px);
+  height:10px;background:#292826;border-radius:5px}
+#summonBall.open{animation:ballOpen .5s ease-out forwards}
+@keyframes ballOpen{0%{transform:scale(1)}55%{transform:scale(1.4)}100%{transform:scale(2.5);opacity:0}}
+
+/* 効果線 (集中線) */
+#speedlines{position:absolute;inset:0;z-index:19;opacity:0;pointer-events:none;
+  transition:opacity .2s ease;transform-origin:50% 48%;
+  background:repeating-conic-gradient(from 0deg at 50% 48%,
+    rgba(255,255,255,0) 0deg 2.4deg,rgba(255,255,255,.6) 2.4deg 3.4deg,rgba(255,255,255,0) 3.4deg 6.4deg);
+  -webkit-mask:radial-gradient(closest-side,transparent 33%,#000 60%);
+          mask:radial-gradient(closest-side,transparent 33%,#000 60%)}
+#speedlines.on{opacity:1;animation:spin 7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* 進化 第2形態 (パネル変数の切替のみ・新モデル不要) */
+#model.form2{--hair:#5E7E7A;--line:#153230;--skin:#ffe6c4}
+#evoAura{position:absolute;left:50%;top:50%;width:340px;height:520px;
+  transform:translate(-50%,-52%);z-index:2;opacity:0;pointer-events:none;filter:blur(7px);
+  background:radial-gradient(50% 50% at 50% 50%,rgba(242,179,60,.55),transparent 68%)}
+#evoAura.on{animation:aura 1.5s ease-out}
+@keyframes aura{0%{opacity:0;transform:translate(-50%,-52%) scale(.6)}
+  40%{opacity:.95}100%{opacity:0;transform:translate(-50%,-52%) scale(1.35)}}
+
+/* ひかりのかべ (シールド) */
+#shield{position:absolute;left:50%;top:50%;width:min(520px,92%);height:min(660px,92%);
+  transform:translate(-50%,-50%) scale(.7);z-index:33;opacity:0;pointer-events:none;
+  border-radius:24px;transition:opacity .3s ease,transform .3s ease;
+  background:linear-gradient(135deg,rgba(94,126,122,.28),rgba(242,179,60,.18));
+  border:3px solid rgba(255,255,255,.6);box-shadow:inset 0 0 60px rgba(94,126,122,.5),0 0 30px rgba(94,126,122,.4);
+  backdrop-filter:blur(1px)}
+#shield.on{opacity:1;transform:translate(-50%,-50%) scale(1)}
+
+/* コントロールバー */
+#henshinBar{position:absolute;left:50%;bottom:8px;transform:translateX(-50%);
+  z-index:50;display:flex;gap:8px;padding:6px 8px;flex-wrap:wrap;justify-content:center;max-width:96%}
+#henshinBar button{font:800 14px/1 "Hiragino Sans",sans-serif;color:#292826;
+  background:#F4ECD8;border:3px solid #292826;border-radius:11px;padding:9px 13px;
+  box-shadow:0 4px 0 #292826;cursor:pointer;transition:transform .08s,box-shadow .08s,background .15s}
+#henshinBar button:hover{background:#F2B33C}
+#henshinBar button:active{transform:translateY(3px);box-shadow:0 1px 0 #292826}
+#henshinBar .fire{background:#E85D26;color:#fff}
+#henshinBar .fire:hover{background:#f2723d}
+#henshinBar .k{opacity:.55;font-weight:600;margin-left:5px;font-size:11px}
+
+/* DQ風コマンド窓 (P1) */
+#cmdWin{position:absolute;left:20px;bottom:64px;z-index:46;
+  background:linear-gradient(#213150,#15223a);color:#fff;border:3px solid #fff;
+  border-radius:12px;box-shadow:0 6px 0 rgba(0,0,0,.35);padding:11px 14px;
+  font:800 17px/1.5 "Hiragino Sans",sans-serif;display:none;min-width:150px}
+#cmdWin.on{display:block}
+#cmdWin h3{margin:0 0 4px;font-size:12px;letter-spacing:.1em;color:#F2B33C}
+#cmdWin ul{list-style:none;margin:0;padding:0}
+#cmdWin li{padding:1px 8px 1px 24px;position:relative;cursor:pointer;white-space:nowrap}
+#cmdWin li.sel{color:#F2B33C}
+#cmdWin li.sel::before{content:"▶";position:absolute;left:4px}
 </style>
 </head>
 <body>
@@ -747,11 +879,35 @@ body.obs #panel{display:none}
       </div>
     </div>
   </div>
+
+  <!-- 変身スタジオ レイヤー群 (すべて #stage 内・obsでも出る) -->
+  <video id="camView" autoplay playsinline muted></video>
+  <div id="evoAura"></div>
+  <div id="speedlines"></div>
+  <div id="vignette"></div>
+  <div id="shield"></div>
+  <canvas id="fxCanvas"></canvas>
+  <div id="summonBall"></div>
+  <div id="flash"></div>
+  <div id="telop"></div>
+
+  <div id="cmdWin">
+    <h3 id="cmdTitle">コマンド</h3>
+    <ul id="cmdList"></ul>
+  </div>
+
+  <div id="henshinBar">
+    <button id="hbHenshin">へんしん<span class="k">H</span></button>
+    <button id="hbFire" class="fire">オリモダンテ<span class="k">F</span></button>
+    <button id="hbEvo">しんか<span class="k">E</span></button>
+    <button id="hbSummon">しょうかん<span class="k">Q</span></button>
+    <button id="hbCmd">コマンド窓<span class="k">C</span></button>
+  </div>
 </div>
 
 <aside id="panel">
   <h1>髪型エディタ</h1>
-  <p class="hint">髪パーツをクリックで選択、そのままドラッグで移動。Hキーでパネル切替 / ?obs で配信モード</p>
+  <p class="hint">髪パーツをクリックで選択、そのままドラッグで移動。Pキーでパネル切替 / Hキーでへんしん / ?obs で配信モード / ?debug=1 でマウス=手</p>
 
   <h2>選択中: <span id="selName">なし</span></h2>
   <div class="row"><label>パーツ選択</label>
@@ -1498,11 +1654,14 @@ async function startCam(){
     const video = document.getElementById('camVid');
     video.srcObject = stream;
     await video.play();
+    /* 変身用の可視カメラレイヤーにも同じ映像を流す (トラッキングは非表示camVidで継続) */
+    try { const cv = $('camView'); cv.classList.remove('debugbg'); cv.srcObject = stream; cv.play().catch(()=>{}); } catch(_){}
     NEU.l = NEU.r = .5;
     NEUP.n = 0;
-    cam = {lm, poseLm: null, env: {vis, files}, video, stream,
-           raf: 0, last: -1, frame: 0, wristX: [], waveT: 0};
+    cam = {lm, poseLm: null, handLm: null, env: {vis, files}, video, stream,
+           raf: 0, last: -1, frame: 0, hframe: 0, wristX: [], waveT: 0};
     if (CFG.pose) await loadPose();
+    await loadHands();
     camStat.textContent = 'トラッキング中';
     camBtn.textContent = 'カメラ停止';
     camLoop();
@@ -1576,6 +1735,7 @@ function camLoop(){
   Object.keys(vars).forEach(k => st.setProperty(k, vars[k]));
   model.classList.toggle('exp-smile', smile > .6);
   try { poseLoop(); } catch (_) {}
+  try { handLoop(); } catch (_) {}
   /* 別窓ビューア連携: トラッキング結果を親(controller)へ送り、中継してもらう */
   if (window.parent !== window) {
     try {
@@ -1672,11 +1832,350 @@ addEventListener('keydown', e => {
   if (e.key === 'ArrowRight') { e.preventDefault(); nudge(st, 0); return; }
   if (e.key === 'ArrowUp')    { e.preventDefault(); nudge(0, -st); return; }
   if (e.key === 'ArrowDown')  { e.preventDefault(); nudge(0, st); return; }
-  if (e.key.toLowerCase() === 'h') panel.classList.toggle('hidden');
+  const k = e.key.toLowerCase();
+  if (k === 'p') { panel.classList.toggle('hidden'); return; }
+  if (k === 'h') { henshin(); return; }
+  if (k === 'f') { orimodante(); return; }
+  if (k === 'e') { shinka(); return; }
+  if (k === 'q') { shoukan(); return; }
+  if (k === 'c') { toggleCmd(); return; }
 });
 if (QP.has('obs') || LIVE) document.body.classList.add('obs');
 if (QP.has('zoom')) model.style.setProperty('--zoom', QP.get('zoom'));
 if (LIVE) setTimeout(startCam, 400);
+
+/* ================= 変身スタジオ エンジン ================= */
+const DEBUG = QP.has('debug');
+
+/* ---- MediaPipe Hands (既存 tasks-vision バンドルを流用・追加CDN不要) ---- */
+async function loadHands(){
+  if (!cam || cam.handLm || !cam.env) return;
+  try {
+    cam.handLm = await cam.env.vis.HandLandmarker.createFromOptions(cam.env.files, {
+      baseOptions: {
+        modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
+        delegate: 'GPU'
+      },
+      runningMode: 'VIDEO', numHands: 2
+    });
+  } catch (_) { cam.handLm = null; }
+}
+/* 手のランドマーク → HANDS[] (画面基準の正規化座標: x=0左→1右, 伸びている指先のみ) */
+let HANDS = [];
+function handLoop(){
+  if (!cam || !cam.handLm) return;
+  cam.hframe++;
+  if (cam.hframe % 2) return;                 /* 2フレームに1回で負荷軽減 */
+  const hr = cam.handLm.detectForVideo(cam.video, performance.now());
+  const out = [];
+  const L = hr.landmarks || [];
+  for (const lm of L){
+    const px = (lm[0].x+lm[5].x+lm[9].x+lm[13].x+lm[17].x)/5;
+    const py = (lm[0].y+lm[5].y+lm[9].y+lm[13].y+lm[17].y)/5;
+    const wr = lm[0], tipsI = [4,8,12,16,20], pipI = [3,6,10,14,18], tips = [];
+    for (let i=0;i<5;i++){
+      const t = lm[tipsI[i]], p = lm[pipI[i]];
+      const dt = Math.hypot(t.x-wr.x,t.y-wr.y), dp = Math.hypot(p.x-wr.x,p.y-wr.y);
+      if (dt > dp*1.04) tips.push({x:1-t.x, y:t.y});   /* 指の伸展判定+画面ミラー */
+    }
+    out.push({x:1-px, y:py, tips});
+  }
+  HANDS = out;
+}
+
+/* ---- デバッグ: マウス=手 (中央に寄せると両手接近=チャージ、外へ広げると発動) ---- */
+if (DEBUG){
+  $('camView').classList.add('debugbg');
+  const mk = (cx,cy)=>({x:cx,y:cy,tips:[{x:cx-0.028,y:cy-0.05},{x:cx,y:cy-0.075},{x:cx+0.028,y:cy-0.05}]});
+  stage.addEventListener('mousemove', e=>{
+    const r = stage.getBoundingClientRect();
+    const mx = (e.clientX-r.left)/r.width, my = (e.clientY-r.top)/r.height;
+    HANDS = [mk(mx,my), mk(1-mx,my)];
+  });
+  stage.addEventListener('mouseleave', ()=>{ HANDS = []; });
+}
+
+/* ---- FXキャンバス (炎・チャージ球・爆発) ---- */
+const fxc = $('fxCanvas'), fxx = fxc.getContext('2d');
+function sizeFx(){ const r = stage.getBoundingClientRect(); fxc.width = Math.max(2,r.width); fxc.height = Math.max(2,r.height); }
+sizeFx(); addEventListener('resize', sizeFx);
+
+let parts = [];            /* 炎パーティクル */
+let charge = 0;            /* 0..1 チャージ量 */
+let forceCharge = 0;       /* ボタン発動の強制チャージ */
+let chargeHoldUntil = 0;
+let rel = null;            /* 発動シーケンス */
+let lastRelease = 0;
+
+function setVignette(a){ $('vignette').style.opacity = Math.max(0,Math.min(1,a)).toFixed(3); }
+function flashNow(){ const f=$('flash'); f.classList.remove('on'); void f.offsetWidth; f.classList.add('on'); }
+function shakeNow(){ stage.classList.remove('shake'); void stage.offsetWidth; stage.classList.add('shake'); setTimeout(()=>stage.classList.remove('shake'),520); }
+
+function spawnFire(x,y,opt){
+  opt = opt||{};
+  const ang = opt.ang!==undefined ? opt.ang : (-Math.PI/2 + (Math.random()-.5)*1.1);
+  const sp  = opt.sp!==undefined ? opt.sp : (0.6+Math.random()*1.4);
+  parts.push({x,y, vx:Math.cos(ang)*sp+(opt.vx||0), vy:Math.sin(ang)*sp+(opt.vy||0),
+    g: opt.g!==undefined?opt.g:0.02, life:1, decay:0.02+Math.random()*0.02,
+    size:(opt.size||4)+Math.random()*3, warm:Math.random()});
+}
+function spawnBurst(x,y){
+  for (let i=0;i<70;i++){ const a=Math.random()*7, s=2+Math.random()*7;
+    parts.push({x,y, vx:Math.cos(a)*s, vy:Math.sin(a)*s, g:0.05, life:1,
+      decay:0.012+Math.random()*0.02, size:4+Math.random()*5, warm:Math.random()}); }
+}
+function drawOrb(x,y,r,a){
+  const g = fxx.createRadialGradient(x,y,0,x,y,Math.max(1,r));
+  g.addColorStop(0,`rgba(255,240,200,${a})`);
+  g.addColorStop(.35,`rgba(242,179,60,${a*.9})`);
+  g.addColorStop(.7,`rgba(232,93,38,${a*.6})`);
+  g.addColorStop(1,'rgba(232,93,38,0)');
+  fxx.globalCompositeOperation='lighter';
+  fxx.fillStyle=g; fxx.beginPath(); fxx.arc(x,y,Math.max(1,r),0,7); fxx.fill();
+  fxx.globalCompositeOperation='source-over';
+}
+function drawExplosion(x,y,R,a){
+  fxx.globalCompositeOperation='lighter';
+  const g = fxx.createRadialGradient(x,y,0,x,y,Math.max(1,R));
+  g.addColorStop(0,`rgba(255,255,255,${a})`);
+  g.addColorStop(.2,`rgba(255,240,190,${a})`);
+  g.addColorStop(.45,`rgba(242,179,60,${a*.85})`);
+  g.addColorStop(.75,`rgba(232,93,38,${a*.5})`);
+  g.addColorStop(1,'rgba(232,93,38,0)');
+  fxx.fillStyle=g; fxx.beginPath(); fxx.arc(x,y,Math.max(1,R),0,7); fxx.fill();
+  fxx.globalCompositeOperation='source-over';
+}
+function triggerRelease(cx,cy){ if (rel) return; rel = {t0:performance.now(), cx, cy, boomed:false}; lastRelease = performance.now(); }
+
+function fxLoop(){
+  requestAnimationFrame(fxLoop);
+  const W = fxc.width, H = fxc.height, now = performance.now();
+  fxx.clearRect(0,0,W,H);
+
+  const hands = HANDS.filter(Boolean);
+  let mid = null, dist = 1;
+  if (hands.length>=2){ const a=hands[0], b=hands[1]; dist=Math.hypot(a.x-b.x,a.y-b.y); mid={x:(a.x+b.x)/2,y:(a.y+b.y)/2}; }
+
+  const CHARGE_D = 0.30, RELEASE_D = 0.5;
+  if (forceCharge>0){ charge=Math.min(1,charge+0.035); if(!mid) mid={x:.5,y:.46}; }
+  else if (mid && dist<CHARGE_D && !rel){ charge=Math.min(1, charge + 0.018 + (CHARGE_D-dist)*0.06); }
+  else if (!rel){ charge=Math.max(0, charge-0.03); }
+
+  /* 手ジェスチャーからの発動: 溜まった状態で両手を広げる */
+  if (!rel && !forceCharge && mid && charge>0.4 && dist>RELEASE_D && now-lastRelease>800)
+    triggerRelease(mid.x*W, mid.y*H);
+  /* ボタン発動: 満タン→一拍溜め→中央で発動 */
+  if (forceCharge>0 && charge>=0.99){
+    if (!chargeHoldUntil) chargeHoldUntil = now+420;
+    else if (now>chargeHoldUntil){ forceCharge=0; chargeHoldUntil=0; triggerRelease(W/2,H*0.46); }
+  }
+
+  /* 指先の炎 (伸びた指に宿る) + チャージ中は球へ収束 */
+  for (const h of hands){
+    const tips = (h.tips&&h.tips.length)?h.tips:[{x:h.x,y:h.y-0.05}];
+    for (const t of tips){
+      if (Math.random()<0.85 && !rel) spawnFire(t.x*W, t.y*H, {size:3});
+      if ((charge>0.05) && mid && !rel){
+        const dx=mid.x*W-t.x*W, dy=mid.y*H-t.y*H;
+        spawnFire(t.x*W, t.y*H, {ang:Math.atan2(dy,dx), sp:2+charge*3, g:0, size:3});
+      }
+    }
+  }
+  /* チャージ球 */
+  if (charge>0.02 && mid && !rel) drawOrb(mid.x*W, mid.y*H, 14+charge*46, Math.min(1,0.4+charge*0.7));
+
+  /* 発動シーケンス: 合体→一拍→爆発 (奥→手前のスケール変化で奥行き) */
+  if (rel){
+    const e = now-rel.t0, cx=rel.cx, cy=rel.cy;
+    if (e<260){                                   /* 吸い込み/合体 */
+      charge=1;
+      const k=e/260, off=(1-k)*(W*0.16);
+      drawOrb(cx-off,cy, 24+20, 0.9);
+      drawOrb(cx+off,cy, 24+20, 0.9);
+      drawOrb(cx,cy, 20+k*24, 0.6+k*0.4);
+      setVignette(0.85);
+    } else if (e<420){                            /* 一拍: 小さく奥で光る */
+      const pulse=1+Math.sin(e*0.05)*0.14;
+      drawOrb(cx,cy, 30*pulse, 1);
+      setVignette(0.9);
+    } else {                                      /* 爆発: 奥(小)→手前(大) */
+      if (!rel.boomed){ rel.boomed=true; flashNow(); shakeNow(); spawnBurst(cx,cy); }
+      const t=e-420, p=Math.min(1, t/520);
+      const R=30 + p*Math.max(W,H)*0.55, a=1-p;
+      drawExplosion(cx,cy,R,a);
+      setVignette(0.9*(1-p));
+      if (t>560){ rel=null; charge=0; forceCharge=0; chargeHoldUntil=0; setVignette(0); }
+    }
+  } else {
+    setVignette(charge*0.8);
+  }
+
+  /* パーティクル更新・描画 */
+  for (const p of parts){ p.x+=p.vx; p.y+=p.vy; p.vy+=p.g; p.vx*=0.99; p.life-=p.decay; }
+  parts = parts.filter(p=>p.life>0 && p.size*p.life>0.3);
+  if (parts.length>1400) parts.splice(0, parts.length-1400);
+  fxx.globalCompositeOperation='lighter';
+  for (const p of parts){
+    const a=Math.max(0,p.life), c = p.warm>.55 ? '242,179,60' : '232,93,38';
+    fxx.fillStyle=`rgba(${c},${a})`;
+    fxx.beginPath(); fxx.arc(p.x,p.y,Math.max(0.5,p.size*p.life),0,7); fxx.fill();
+  }
+  fxx.globalCompositeOperation='source-over';
+}
+requestAnimationFrame(fxLoop);
+
+/* ---- テロップ ---- */
+let telopTimer=null;
+function telop(text, ms){
+  ms = ms||1800;
+  const t=$('telop'); t.textContent=text; t.classList.add('on');
+  clearTimeout(telopTimer); telopTimer=setTimeout(()=>t.classList.remove('on'), ms);
+}
+
+/* ---- 変身 (実写⇄M1) ---- */
+let realMode=false, henshinBusy=false;
+function henshin(){
+  if (henshinBusy) return; henshinBusy=true;
+  flashNow();
+  if (!realMode){
+    /* M1 → 実写 */
+    model.classList.remove('morph-in','land'); void model.offsetWidth;
+    model.classList.add('morph-out');
+    telop('へんしん かいじょ！', 1400);
+    setTimeout(()=>stage.classList.add('show-real'), 420);
+    setTimeout(()=>{ model.classList.remove('morph-out'); realMode=true; henshinBusy=false; }, 900);
+  } else {
+    /* 実写 → M1 */
+    stage.classList.remove('show-real');
+    model.classList.remove('morph-out','land'); void model.offsetWidth;
+    model.classList.add('morph-in');
+    telop('おりも、へんしん！', 1500);
+    setTimeout(()=>{ model.classList.remove('morph-in'); model.classList.add('land');
+      spawnBurst(fxc.width/2, fxc.height*0.4); flashNow(); }, 1050);
+    setTimeout(()=>{ model.classList.remove('land'); realMode=false; henshinBusy=false; }, 1550);
+  }
+}
+
+/* ---- オリモダンテ (ボタン/キー発動: 手なしでも撮れる) ---- */
+function orimodante(){ if (rel) return; forceCharge=1; chargeHoldUntil=0; telop('オリモダンテ！', 1600); }
+
+/* ---- しんか (進化) ---- */
+let form2=false, shinkaBusy=false;
+function shinka(){
+  if (shinkaBusy||henshinBusy) return; shinkaBusy=true;
+  telop('おや……？ M1の ようすが……！', 2400);
+  let delay=280, on=false;
+  const tick=()=>{
+    on=!on; model.style.filter = on ? 'brightness(0) invert(1)' : 'none';
+    delay*=0.82;
+    if (delay>40){ setTimeout(tick, delay); }
+    else {
+      model.style.filter='';
+      form2=!form2; model.classList.toggle('form2', form2);
+      const au=$('evoAura'); au.classList.remove('on'); void au.offsetWidth; au.classList.add('on');
+      flashNow();
+      telop(form2 ? 'M1は オリモンに しんかした！' : 'M1は もとの すがたに もどった！', 2600);
+      shinkaBusy=false;
+    }
+  };
+  setTimeout(tick, 900);
+}
+
+/* ---- しょうかん (召喚/ゲット) ---- */
+let shoukanBusy=false;
+function shoukan(){
+  if (shoukanBusy) return; shoukanBusy=true;
+  const ball=$('summonBall');
+  ball.classList.remove('open'); ball.style.opacity='1';
+  const anim=ball.animate([
+    {transform:'translate(-58vw,-120px) scale(.7)'},
+    {transform:'translate(-30vw,60px) scale(.8)',  offset:.20},
+    {transform:'translate(-16vw,-42px) scale(.85)',offset:.38},
+    {transform:'translate(-7vw,44px) scale(.9)',   offset:.55},
+    {transform:'translate(-2vw,-16px) scale(.95)', offset:.72},
+    {transform:'translate(0,10px) scale(1)',       offset:.86},
+    {transform:'translate(0,0) scale(1)'}
+  ], {duration:1500, easing:'ease-out', fill:'forwards'});
+  telop('オリモ珠、しょうかん！', 2000);
+  anim.onfinish=()=>{
+    ball.classList.add('open'); flashNow();
+    setTimeout(()=>{
+      ball.style.opacity='0'; ball.classList.remove('open'); ball.style.transform='';
+      const sl=$('speedlines'); sl.classList.add('on');
+      if (realMode){ stage.classList.remove('show-real'); realMode=false; }
+      model.classList.remove('morph-out','morph-in'); void model.offsetWidth; model.classList.add('land');
+      spawnBurst(fxc.width/2, fxc.height*0.4);
+      telop('M1 とうじょう！', 2200);
+      setTimeout(()=>{ sl.classList.remove('on'); model.classList.remove('land'); shoukanBusy=false; }, 1600);
+    }, 480);
+  };
+}
+
+/* ---- ひかりのかべ / ルーラ (P1コマンド用) ---- */
+function hikari(){
+  const s=$('shield'); s.classList.add('on');
+  telop('ひかりのかべ！ コメントを はねかえす。', 2200);
+  clearTimeout(hikari._t); hikari._t=setTimeout(()=>s.classList.remove('on'), 4000);
+}
+function rura(){
+  telop('ルーラ！', 1300);
+  model.animate([{opacity:1,transform:'scale(var(--zoom)) translateY(0)'},
+                 {opacity:0,transform:'scale(var(--zoom)) translateY(-150%)'}],
+                 {duration:480, easing:'ease-in', fill:'forwards'});
+  setTimeout(()=>{
+    model.animate([{opacity:0,transform:'scale(var(--zoom)) translateY(-150%)'},
+                   {opacity:1,transform:'scale(var(--zoom)) translateY(0)'}],
+                   {duration:480, easing:'ease-out'});
+    spawnBurst(fxc.width/2, fxc.height*0.4); flashNow();
+  }, 720);
+}
+
+/* ---- DQ風コマンド窓 (P1) ---- */
+const CMD = {
+  root: {title:'コマンド', items:[
+    {label:'たたかう', act:orimodante},
+    {label:'じゅもん', go:'jumon'},
+    {label:'へんしん', act:henshin},
+    {label:'どうぐ',   act:()=>telop('…なにも もっていない。', 1500)}
+  ]},
+  jumon: {title:'▶じゅもん', items:[
+    {label:'オリモダンテ', act:orimodante},
+    {label:'ひかりのかべ', act:hikari},
+    {label:'ルーラ',       act:rura},
+    {label:'もどる',       go:'root'}
+  ]}
+};
+let cmdCur='root', cmdSel=0, cmdOpen=false;
+function renderCmd(){
+  const win=$('cmdWin'), m=CMD[cmdCur];
+  $('cmdTitle').textContent=m.title;
+  const ul=$('cmdList'); ul.innerHTML='';
+  m.items.forEach((it,i)=>{
+    const li=document.createElement('li');
+    li.textContent=it.label; if (i===cmdSel) li.className='sel';
+    li.onclick=()=>{ cmdSel=i; renderCmd(); cmdEnter(); };
+    ul.appendChild(li);
+  });
+}
+function cmdMove(d){ const m=CMD[cmdCur]; cmdSel=(cmdSel+d+m.items.length)%m.items.length; renderCmd(); }
+function cmdEnter(){
+  const it=CMD[cmdCur].items[cmdSel];
+  if (it.go){ cmdCur=it.go; cmdSel=0; renderCmd(); } else if (it.act) it.act();
+}
+function toggleCmd(){ cmdOpen=!cmdOpen; $('cmdWin').classList.toggle('on', cmdOpen); if (cmdOpen){ cmdCur='root'; cmdSel=0; renderCmd(); } }
+addEventListener('keydown', e=>{
+  if (!cmdOpen || e.target.matches('input,select')) return;
+  if (e.key==='ArrowUp'){ cmdMove(-1); e.preventDefault(); }
+  else if (e.key==='ArrowDown'){ cmdMove(1); e.preventDefault(); }
+  else if (e.key==='Enter'){ cmdEnter(); e.preventDefault(); }
+});
+
+/* ---- ボタン配線 ---- */
+$('hbHenshin').onclick=henshin;
+$('hbFire').onclick=orimodante;
+$('hbEvo').onclick=shinka;
+$('hbSummon').onclick=shoukan;
+$('hbCmd').onclick=toggleCmd;
 </script>
 </body>
 </html>

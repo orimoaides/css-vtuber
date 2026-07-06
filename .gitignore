@@ -6,3 +6,6 @@ Thumbs.db
 Desktop.ini
 .DS_Store
 *.swp
+
+# 検証スクショ出力 (ローカル確認用・成果物ではない)
+_verify_henshin/
