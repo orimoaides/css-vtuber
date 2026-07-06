@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CSS VTuber Controller</title>
+<style>
+/* =====================================================================
+   CSS VTuber Controller — モデルを動かすアプリ
+   モデル本体(css-vtuber.html?obs)をiframeで表示し、postMessageで
+   表情クラス/CSS変数/アイドルアニメclassを注入する。
+   JSの役割はモデルと同じ思想: 状態管理と注入のみ、描画はすべてCSS側。
+
+   起動モード:
+     controller.html          … モデル表示+操作パネル (通常)
+     controller.html?viewer   … モデル表示のみの別窓 (コントローラーから遠隔操作)
+   ===================================================================== */
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden}
+body{display:flex;font-family:'Segoe UI',system-ui,sans-serif;background:#f6f1e7}
+
+/* ===== モデル表示エリア ===== */
+#viewport{flex:1;position:relative;overflow:hidden;
+  background:radial-gradient(rgba(127,47,22,.06) 3px,transparent 3.5px) 0 0/40px 40px,#f6f1e7}
+#viewport iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:transparent}
+/* マウス追従ON中のカーソル表示 */
+#viewport.follow{cursor:crosshair}
+
+/* ===== 操作パネル (エディタと同じ配色系) ===== */
+#panel{width:300px;max-height:100vh;overflow-y:auto;background:#fff;
+  border-left:2px solid #e5ddcf;padding:16px 18px 32px;flex-shrink:0}
+body.viewer #panel{display:none}
+#panel h1{font-size:15px;margin:0 0 4px;color:#241d18}
+#panel .hint{font-size:11px;color:#8a8175;margin:0 0 12px;line-height:1.7}
+#panel h2{font-size:12px;margin:18px 0 8px;color:#f5741d;
+  border-bottom:2px solid #f6e3d2;padding-bottom:4px;letter-spacing:.05em}
+.row{display:flex;align-items:center;gap:8px;margin:7px 0;font-size:12px;color:#40382f}
+.row label{width:86px;flex-shrink:0}
+.row input[type=range]{flex:1;accent-color:#f5741d;min-width:0}
+.row output{width:38px;text-align:right;font-variant-numeric:tabular-nums;color:#8a8175}
+.grid{display:flex;flex-wrap:wrap;gap:6px}
+.grid button{font-size:12px;padding:5px 10px;border:2px solid #241d18;border-radius:8px;
+  background:#fff;cursor:pointer;color:#241d18}
+.grid button:hover{background:#ffe9d6}
+.grid button.on{background:#f5741d;border-color:#f5741d;color:#fff}
+.grid button b{color:#f5741d;font-weight:700;margin-right:3px}
+.grid button.on b{color:#fff}
+.toggles{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:#40382f}
+.toggles label{display:flex;align-items:center;gap:5px;cursor:pointer}
+.toggles input{accent-color:#f5741d}
+#panel .act{display:block;width:100%;margin-top:8px;font-size:12px;padding:6px 10px;
+  border:2px solid #241d18;border-radius:8px;background:#fff;cursor:pointer;color:#241d18}
+#panel .act:hover{background:#ffe9d6}
+#panel .act.primary{background:#f5741d;border-color:#f5741d;color:#fff}
+#panel .act.primary:hover{background:#e0630e}
+#camStat{font-size:11px;color:#8a8175;margin-top:4px}
+</style>
+</head>
+<body>
+
+<div id="viewport" class="follow">
+  <iframe id="frame" src="css-vtuber.html?obs" allow="camera; microphone" title="vtuber model"></iframe>
+</div>
+
+<aside id="panel">
+  <h1>モデルコントローラー</h1>
+  <p class="hint">
+    モデルの上でマウスを動かすと視線と首が追従。<br>
+    Space長押し: 口を開く / 1〜0・Q・W: 表情
+  </p>
+
+  <h2>表情</h2>
+  <div class="grid" id="expBtns">
+    <button data-exp="" class="on"><b>1</b>通常</button>
+    <button data-exp="smile"><b>2</b>にっこり</button>
+    <button data-exp="bikkuri"><b>3</b>びっくり</button>
+    <button data-exp="jito"><b>4</b>ジト目</button>
+    <button data-exp="angry"><b>5</b>怒り</button>
+    <button data-exp="sad"><b>6</b>困り</button>
+    <button data-exp="close"><b>7</b>目閉じ</button>
+    <button data-exp="wink"><b>8</b>ウィンク</button>
+    <button data-exp="tere"><b>9</b>照れ</button>
+    <button data-exp="doya"><b>0</b>ドヤ</button>
+    <button data-exp="nemui"><b>Q</b>ねむい</button>
+    <button data-exp="guru"><b>W</b>目回し</button>
+  </div>
+
+  <h2>手動操作</h2>
+  <div class="toggles" style="margin-bottom:6px">
+    <label><input type="checkbox" id="followChk" checked> マウス追従 (首+視線)</label>
+  </div>
+  <div class="row"><label>首かしげ</label><input type="range" id="rollSl" min="-100" max="100" value="0"><output>0</output></div>
+  <div class="row"><label>目の開き</label><input type="range" id="eyeSl" min="0" max="100" value="100"><output>1</output></div>
+  <div class="row"><label>口の開き</label><input type="range" id="mouthSl" min="0" max="100" value="0"><output>0</output></div>
+  <div class="row"><label>ズーム</label><input type="range" id="zoomSl" min="30" max="200" value="100"><output>1</output></div>
+
+  <h2>自動アニメ</h2>
+  <div class="toggles" id="animChks">
+    <label><input type="checkbox" data-anim="auto-blink" checked> まばたき</label>
+    <label><input type="checkbox" data-anim="auto-gaze" checked> 目の泳ぎ</label>
+    <label><input type="checkbox" data-anim="idle-bob" checked> 浮遊</label>
+    <label><input type="checkbox" data-anim="idle-breathe" checked> 呼吸</label>
+    <label><input type="checkbox" data-anim="hair-sway" checked> 髪ゆれ</label>
+    <label><input type="checkbox" data-anim="hair-follow" checked> 髪の遅延追従</label>
+    <label><input type="checkbox" data-anim="arm-swing" checked> 腕スイング</label>
+    <label><input type="checkbox" data-anim="body-sway" checked> 体の揺れ</label>
+  </div>
+
+  <h2>フェイストラッキング</h2>
+  <button class="act primary" id="camBtn">カメラで動かす</button>
+  <p id="camStat">停止中 (開始するとマウス追従はOFF)</p>
+
+  <h2>表示</h2>
+  <button class="act" id="detachBtn">モデルを別窓で開く</button>
+  <p class="hint" style="margin-top:6px">別窓にも操作が同時に反映されます。別窓側はモデルのみの表示。</p>
+</aside>
+
+<script>
+const $ = id => document.getElementById(id);
+const QP = new URLSearchParams(location.search);
+const VIEWER = QP.has('viewer');
+const frame = $('frame');
+const ALLOW = ['exp','var','vars','anim','cam'];
+
+/* ===== ビューアモード: 受け取ったメッセージをモデルiframeへ転送するだけ ===== */
+if (VIEWER) {
+  document.body.classList.add('viewer');
+  document.title = 'CSS VTuber Viewer';
+  window.addEventListener('message', e => {
+    const m = e.data;
+    if (!m || typeof m !== 'object') return;
+    if (ALLOW.includes(m.type)) frame.contentWindow.postMessage(m, '*');
+    else if (m.type === 'vtuber-ready' && window.opener)
+      window.opener.postMessage({type: 'viewer-ready'}, '*');  /* モデル準備完了を親へ中継 */
+    else if (m.type === 'cam-state' && window.opener)
+      window.opener.postMessage(m, '*');                       /* カメラ成否も親へ中継 */
+  });
+}
+
+/* ===== コントローラーモード ===== */
+if (!VIEWER) {
+
+/* --- 状態: これを送るだけ。描画ロジックは全部モデル側CSS --- */
+const state = {
+  exp: '',
+  anims: {'auto-blink':true,'auto-gaze':true,'idle-bob':true,'idle-breathe':true,
+          'hair-sway':true,'hair-follow':true,'arm-swing':true,'body-sway':true},
+  vars: {'--roll':0,'--eye-open':1,'--zoom':1},
+  follow: true, cam: false
+};
+let viewerWin = null;
+
+function send(m){
+  try { frame.contentWindow.postMessage(m, '*'); } catch (_) {}
+  if (viewerWin && !viewerWin.closed) { try { viewerWin.postMessage(m, '*'); } catch (_) {} }
+}
+function sendAll(){
+  send({type:'exp', name: state.exp});
+  Object.keys(state.anims).forEach(k => send({type:'anim', name:k, on: state.anims[k]}));
+  send({type:'vars', vars: state.vars});
+}
+/* モデル(自分のiframe/別窓)の準備ができたら状態を流し込む。カメラ成否も受ける */
+window.addEventListener('message', e => {
+  const m = e.data, t = m && m.type;
+  if (t === 'vtuber-ready' || t === 'viewer-ready') sendAll();
+  else if (t === 'cam-state') {
+    state.cam = !!m.on;
+    $('camBtn').textContent = state.cam ? 'カメラを停止' : 'カメラで動かす';
+    $('camStat').textContent = m.error ? 'エラー: ' + m.error
+      : state.cam ? 'トラッキング中 (マウス追従は休止)' : '停止中 (開始するとマウス追従はOFF)';
+  }
+});
+
+/* --- 表情: ボタン + ホットキー --- */
+const EXP_KEYS = {'1':'','2':'smile','3':'bikkuri','4':'jito','5':'angry','6':'sad',
+                  '7':'close','8':'wink','9':'tere','0':'doya','q':'nemui','w':'guru'};
+function setExp(name){
+  state.exp = name;
+  send({type:'exp', name});
+  document.querySelectorAll('#expBtns button').forEach(b =>
+    b.classList.toggle('on', b.dataset.exp === name));
+}
+document.querySelectorAll('#expBtns button').forEach(b =>
+  b.addEventListener('click', () => setExp(b.dataset.exp)));
+
+/* --- マウス追従: rAFループでlerp平滑化して首+視線の変数を注入 --- */
+const follow = {tx:0, ty:0, x:0, y:0, mouth:0, mouthT:0};
+const viewport = $('viewport');
+viewport.addEventListener('pointermove', e => {
+  if (!state.follow || state.cam) return;
+  const r = viewport.getBoundingClientRect();
+  follow.tx = Math.max(-1, Math.min(1, (e.clientX - r.left - r.width/2) / (r.width/2)));
+  follow.ty = Math.max(-1, Math.min(1, (e.clientY - r.top - r.height/2) / (r.height/2)));
+});
+viewport.addEventListener('pointerleave', () => { follow.tx = 0; follow.ty = 0; });
+(function loop(){
+  requestAnimationFrame(loop);
+  if (state.cam) return;                       /* トラッキング中は譲る */
+  follow.x += (follow.tx - follow.x) * .13;
+  follow.y += (follow.ty - follow.y) * .13;
+  follow.mouth += (follow.mouthT - follow.mouth) * .3;
+  const v = {'--mouth-open': +follow.mouth.toFixed(3)};
+  if (state.follow) {
+    v['--yaw'] = +follow.x.toFixed(3);
+    v['--pitch'] = +(follow.y * .7).toFixed(3);
+    v['--pupil-x'] = +follow.x.toFixed(3);
+    v['--pupil-y'] = +follow.y.toFixed(3);
+  }
+  send({type:'vars', vars: v});
+})();
+$('followChk').addEventListener('change', e => {
+  state.follow = e.target.checked;
+  viewport.classList.toggle('follow', state.follow);
+  if (!state.follow) send({type:'vars', vars:{'--yaw':0,'--pitch':0,'--pupil-x':0,'--pupil-y':0}});
+});
+
+/* --- Space長押しで口パク --- */
+window.addEventListener('keydown', e => {
+  if (/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) return;
+  if (e.key === ' ') { e.preventDefault(); follow.mouthT = 1; return; }
+  const name = EXP_KEYS[e.key.toLowerCase()];
+  if (name !== undefined) setExp(name);
+});
+window.addEventListener('keyup', e => { if (e.key === ' ') follow.mouthT = 0; });
+
+/* --- スライダー: CSS変数を直接注入 --- */
+function bindSlider(id, key, toVal, fmt){
+  const el = $(id), out = el.parentElement.querySelector('output');
+  el.addEventListener('input', () => {
+    const v = toVal(+el.value);
+    state.vars[key] = v;
+    send({type:'var', key, value: v});
+    out.textContent = fmt ? fmt(v) : v;
+  });
+}
+bindSlider('rollSl', '--roll', v => +(v/100).toFixed(2));
+bindSlider('eyeSl', '--eye-open', v => +(v/100).toFixed(2));
+bindSlider('mouthSl', '--mouth-open', v => +(v/100).toFixed(2));
+$('mouthSl').addEventListener('input', e => { follow.mouthT = follow.mouth = e.target.value/100; });
+bindSlider('zoomSl', '--zoom', v => +(v/100).toFixed(2));
+
+/* --- 自動アニメのON/OFF --- */
+document.querySelectorAll('#animChks input').forEach(el =>
+  el.addEventListener('change', () => {
+    state.anims[el.dataset.anim] = el.checked;
+    send({type:'anim', name: el.dataset.anim, on: el.checked});
+  }));
+
+/* --- フェイストラッキング (モデル側のカメラを遠隔で開始/停止)。
+       実際のON/OFFはモデルからの cam-state 通知で確定する --- */
+$('camBtn').addEventListener('click', () => {
+  const want = !state.cam;
+  send({type:'cam', on: want});
+  $('camStat').textContent = want ? '起動中… (初回はモデルのDLで数秒かかります)' : '停止中';
+});
+
+/* --- 別窓ビューア --- */
+$('detachBtn').addEventListener('click', () => {
+  if (viewerWin && !viewerWin.closed) { viewerWin.focus(); return; }
+  viewerWin = window.open('controller.html?viewer', 'vtviewer',
+    'width=420,height=760,menubar=no,toolbar=no,location=no');
+});
+
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,1624 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CSS VTuber — びんぞう</title>
+<!--
+  設計思想:
+  - モデルの描画・変形はすべて HTML + CSS。画像素材ゼロ。
+  - JS の役割は「CSS変数への書き込み」と「クラスのON/OFF」のみ。
+    M2 ではフェイストラッキングが同じ変数に書き込むだけでモデルが動く。
+  - OBSモード: URL に ?obs を付けると背景透過 + パネル非表示。
+  - H キーでパネルの表示/非表示を切り替え。
+
+  ■ キャラ構築ルール (次キャラのテンプレ用・このファイルを複製して使う)
+  1. レイヤー構成 (後ろ→前):
+     #decoBack(襟足・もみあげ) → .bodygrp(体一式) → .head内 [.facegrp(輪郭+耳) → .hair(髪) → .feat(口)] → #deco(白目・黒目・眉・ハイライト)
+  2. 輪郭(f-base): polygon%座標。頂点編集で彫る。耳は.facegrp内に入れて顔と一体の縁取りにする
+  3. 耳: 半円 (border-radius:100% 0 0 100% / 50% 0 0 50% の左右ミラー)。顔に10px前後食い込ませる
+  4. 目: 白目2円を .eyegrp で包み、union外周だけ縁取り(メガネ型)。左白目をやや小さく(非対称がキー)
+  5. 黒目: 縦長楕円 + radial-gradient(13% 9% at 66% 22%) の右上ハイライト
+  6. 髪: 丸の集合(blob)+フリック素材。髪自体に縁取りは付けず、キャラ外周線(--line-out)に任せる
+  7. 縁取り: 外周=--line-out、内側(顔+耳/体/襟足/白目)=--line-in。各グループのdrop-shadow×4
+  8. 表情: #model の exp-* クラス。白目scaleY/黒目opacity・translate/口のwidth・height・radius/眉表示で作る
+  9. 下絵トレース: 参考画像を読み込み→図形素材で手置き→「調整CSSをコピー」→焼き込み
+-->
+<style>
+/* ========== ページ ========== */
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;display:flex;background:#f6f1e7;
+     font-family:"Hiragino Sans","Yu Gothic UI",system-ui,sans-serif}
+body.checker{background:repeating-conic-gradient(#e3e3e3 0 25%,#fff 0 50%) 0 0/28px 28px}
+body.obs{background:transparent}
+body.obs #panel{display:none}
+#stage{flex:1;display:grid;place-items:center;overflow:hidden;position:relative}
+/* トレース用の下絵 (エディタ専用・モデルには含まれない) */
+#refImg{position:absolute;left:calc(50% + var(--rx,-49px));top:calc(50% + var(--ry,10px));
+        transform:translate(-50%,-50%);height:var(--rh,830px);opacity:var(--ro,.4);
+        pointer-events:none;display:none;z-index:0}
+
+/* ========== モデル: パラメータ ========== */
+#model{
+  position:relative;z-index:1;width:320px;height:680px;
+  /* --flip:-1 でモデル全体を左右反転 (Meetのセルフビュー対策など。独立プロパティで--zoomと共存) */
+  scale:var(--flip,1) 1;
+  transform:scale(var(--zoom));transform-origin:center;
+  /* --- トラッキング対応パラメータ (M2でJSブリッジが書き込む) --- */
+  --yaw:0;           /* 首 左右 -1..1 */
+  --pitch:0;         /* 首 上下 -1..1 */
+  --roll:0;          /* 首 かしげ -1..1 */
+  --eye-open:1;      /* 目の開き 0..1 */
+  --pupil-x:0;       /* 視線 左右 -1..1 */
+  --pupil-y:0;       /* 視線 上下 -1..1 */
+  --pupil-scale:1;   /* 瞳の大きさ 0.5..1.5 */
+  --mouth-open:0;    /* 口の開き 0..1 */
+  --mouth-wide:.5;   /* 口の幅 0..1 */
+  --zoom:1.15;
+  /* --- パーツ配置・サイズ (コントロールパネルで調整) --- */
+  --head-s:1;--hair-s:1;--hair-y:0;
+  --ear-sp:0;--ear-y:0;--ear-s:1;
+  --eyeu-s:1;--eyeu-y:0;
+  --mouth-s:1;--mouth-y:0;
+  --neck-w:1;--tee-w:1;--tee-h:1;
+  /* --- 縁取りの太さ (px) と色 (暗めの朱色) --- */
+  --line-out:4;--line-in:3.33;--line:#7f2f16;
+  /* --- 配色 --- */
+  --ink:#241d18;
+  --hair:#f5741d;
+  --skin:#f8dcb8;
+  --tee:#ececec;
+}
+
+/* ========== 体 ========== */
+.bob{position:absolute;inset:0}
+#model.idle-bob .bob{animation:vtBob 3.4s ease-in-out infinite alternate}
+@keyframes vtBob{from{transform:translateY(0)}to{transform:translateY(5px)}}
+
+/* 旧ボディはトレース版(自由レイヤーのu6/n31/n32等)に置換のため非表示 */
+.neck{display:none;position:absolute;left:50%;top:250px;height:70px;
+      width:calc(32px*var(--neck-w));margin-left:calc(-16px*var(--neck-w));
+      background:var(--skin);border-left:5px solid var(--ink);border-right:5px solid var(--ink)}
+.tee{display:none;position:absolute;left:50%;top:314px;
+     width:calc(176px*var(--tee-w));margin-left:calc(-88px*var(--tee-w));
+     height:calc(112px*var(--tee-h));
+     background:var(--tee);border:5px solid var(--ink);border-radius:32px 32px 14px 14px;
+     transform-origin:bottom center}
+#model.idle-breathe .tee{animation:vtBreathe 3.4s ease-in-out infinite alternate}
+@keyframes vtBreathe{from{transform:scaleY(1)}to{transform:scaleY(1.03)}}
+.collar{display:none;position:absolute;left:119px;top:244px;width:56px;height:16px;
+        background:var(--tee);border:5px solid var(--ink);border-top:none;border-radius:0 0 18px 18px}
+
+/* 腕・手はいったん非搭載 (体の調整が固まってから再実装) */
+
+/* ========== 頭 ========== */
+.head{position:absolute;left:50%;top:22px;width:260px;height:280px;margin-left:-130px;
+      pointer-events:none; /* ラッパー自体はクリック透過 (実パーツだけが受ける) */
+      transform:translateY(calc(var(--pitch)*10px))
+                rotate(calc(var(--yaw)*7deg + var(--roll)*10deg))
+                scale(var(--head-s));
+      transform-origin:50% 85%}
+
+/* エルフ耳: 上外側に尖り、下は丸み。内側の線2本入り */
+.ear{position:absolute;top:152px;width:42px;height:56px;background:var(--skin);
+     z-index:0;
+     transform:translateX(calc(var(--yaw)*-8px + var(--ear-sp)*var(--ear-dir)*14px))
+               translateY(calc(var(--ear-y)*12px))
+               rotate(var(--er)) scale(var(--ear-s))}
+/* 半円の耳: 外側に丸く膨らみ、顔側は平ら。顔に10px前後食い込ませて接続 */
+.ear.l{left:2px;top:160px;width:36px;height:72px;background:#f9eace;
+       transform:translateX(calc(var(--yaw)*-12px)) rotate(-8deg);
+       border-radius:100% 0 0 100% / 50% 0 0 50%}
+.ear.r{left:196px;right:auto;top:157px;width:42px;height:68px;background:#f9eace;
+       transform:translateX(calc(var(--yaw)*-12px)) rotate(6deg);
+       border-radius:0 100% 100% 0 / 0 50% 50% 0}
+.ear i{position:absolute;background:var(--ink);border-radius:2px;height:3px}
+.ear .e1{width:15px;top:17px;left:11px}
+.ear .e2{width:11px;top:30px;left:12px}
+.ear.l .e1{left:8px;top:25px;transform:rotate(30deg)}
+.ear.l .e2{left:11px;top:42px;transform:rotate(-18deg)}
+.ear.r .e1{left:14px;top:23px;transform:rotate(-30deg)}
+.ear.r .e2{left:13px;top:38px;transform:rotate(18deg)}
+
+/* 顔ベース: 丸い頭頂 + 頬の膨らみ + 小さめのあご を合成して輪郭を drop-shadow で付ける */
+.facegrp{position:absolute;inset:0;z-index:1;
+      /* 横を向くと顔がわずかに縮む擬似遠近 (max()でabs相当) */
+      transform:translateX(calc(var(--yaw)*8px)) translateY(calc(var(--pitch)*3px))
+                scaleX(calc(1 - .06*max(var(--yaw), var(--yaw)*-1)))}
+/* 輪郭はベジェ曲線で直接定義: 丸い頭頂 → 下1/3で頬が最大幅 → すぼまる小さなあご */
+/* 輪郭はpolygon%座標: 引き伸ばし・頂点編集の両方が可能 (ユーザートレース版のサイズ) */
+.facegrp .f-base{position:absolute;left:-38px;top:32px;width:305px;height:273px;background:#f9eace;
+  clip-path:polygon(50% 27.1%,43.1% 27.9%,36.2% 30%,30% 33.9%,25.4% 39.3%,22.3% 45.7%,20.8% 50.7%,20.4% 55%,20% 59.3%,21.2% 64.3%,23.1% 67.9%,25.8% 70.7%,29.2% 74.3%,33.8% 77.9%,39.2% 80.7%,44.6% 82.5%,50% 83.2%,55.4% 82.5%,60.8% 80.7%,66.2% 77.9%,70.8% 74.3%,74.2% 70.7%,76.9% 67.9%,78.8% 64.3%,80% 59.3%,79.6% 55%,79.2% 50.7%,77.7% 45.7%,74.6% 39.3%,70% 33.9%,63.8% 30%,56.9% 27.9%)}
+
+/* ---- 髪: 円の集合。輪郭は drop-shadow 4連で合成シルエットに付ける ---- */
+.hair{position:absolute;inset:0;z-index:2;transform-origin:130px 80px;
+      transform:translateX(calc(var(--yaw)*13px))
+                translateY(calc(var(--pitch)*2px + var(--hair-y)*12px))
+                scale(var(--hair-s))}
+.hair i{position:absolute;background:var(--hair);border-radius:50%;cursor:move;pointer-events:auto}
+/* ===== ユーザートレース版の髪 (エディタで手置き) ===== */
+.hair .b2{left:163px;top:65px;width:96px;height:86px;border-radius:50%}
+.hair .b3{left:116px;top:-11px;width:115px;height:108px;border-radius:50%}
+.hair .b4{left:-17px;top:62px;width:82px;height:89px;border-radius:50%}
+.hair .b8{left:38px;top:46px;width:155px;height:104px;border-radius:46%}
+.hair .b1{left:21px;top:-22px;width:131px;height:132px;border-radius:50%}
+/* 髪ゆれ: サイド毛束(b4/b2)が遅れて揺れ、あほ毛(u1)と跳ね毛(n34)は
+   既存のtransform:rotateを壊さないよう独立プロパティ rotate で揺らす */
+#model.hair-sway .b4{animation:vtSwayL 3.4s ease-in-out infinite alternate}
+#model.hair-sway .b2{animation:vtSwayR 3.4s ease-in-out infinite alternate;animation-delay:.35s}
+@keyframes vtSwayL{from{transform:translate(0,0)}to{transform:translate(-2px,3px)}}
+@keyframes vtSwayR{from{transform:translate(0,0)}to{transform:translate(2px,3px)}}
+#model.hair-sway .hair .u1{animation:vtAho 2.8s ease-in-out infinite alternate}
+#model.hair-sway .hair .n34{animation:vtFlick 3.4s ease-in-out infinite alternate;animation-delay:.5s}
+@keyframes vtAho{from{rotate:-3deg}to{rotate:4deg}}
+@keyframes vtFlick{from{rotate:0deg}to{rotate:-4deg}}
+/* 髪の遅延追従: 首の回転(--yaw等)に対して前髪が少し遅れてついてくる */
+#model.hair-follow .hair{transition:transform .25s cubic-bezier(.34,1.56,.42,1)}
+
+/* ---- 顔パーツ: 髪より追従量を大きくして擬似3D ---- */
+.feat{position:absolute;inset:0;z-index:3;pointer-events:none;
+      transform:translateX(calc(var(--yaw)*24px)) translateY(calc(var(--pitch)*10px))}
+/* 編集モード: 全アニメーション停止 */
+#model.editing *{animation:none!important}
+/* ===== 表情差分 =====
+   白目(n12/n11)・黒目(u3/n15)・口(.mouth)の変形と、表情専用の眉(xbrowL/R)で表現。
+   #model に exp-* クラスを付けて切替。M2ではトラッキング値から同じクラスを叩く。 */
+#deco .xbrowL,#deco .xbrowR{position:absolute;width:30px;height:6px;border-radius:3px;
+  background:#241d18;display:none}
+#deco .xbrowL{left:100px;top:154px}
+#deco .xbrowR{left:158px;top:152px}
+#deco .n12,#deco .n11,#deco .u3,#deco .n15,.mouth{transition:transform .12s ease,opacity .12s ease}
+/* ===== M2配線: トラッキング変数 → モデル ===== */
+/* 目・眉・ハイライト(deco)と襟足(decoBack)は頭に追従して回る */
+#deco,#decoBack{transform-origin:160px 260px;
+  transform:translateY(calc(var(--pitch)*10px))
+            rotate(calc(var(--yaw)*7deg + var(--roll)*10deg))
+            scale(var(--head-s))}
+/* まばたき: --eye-open (1=開 0=閉)。左右別の --eye-open-l/-r があれば優先 (ウィンク対応)。
+   各要素は自分用のまぶた変数 --eo を持ち、以降の変形/アニメはすべて --eo を参照する */
+#deco .n12,#deco .u3,#deco .xlidL{--eo:var(--eye-open-l,var(--eye-open))}
+#deco .n11,#deco .n15,#deco .xlidR{--eo:var(--eye-open-r,var(--eye-open))}
+#deco .n12,#deco .n11{transform-origin:50% 80%;transform:scaleY(var(--eo))}
+/* 視線: --pupil-x / --pupil-y (-1..1)。まぶた(--eo)と連動して黒目も閉じる */
+#deco .u3,#deco .n15{transform-origin:50% 100%;
+  transform:translate(calc(var(--pupil-x)*7px),calc(var(--pupil-y)*5px)) scaleY(var(--eo))}
+/* 閉じ目の線: 目を閉じきると現れるまぶたのライン (白目が潰れて目が消える対策) */
+#deco .xlidL,#deco .xlidR{position:absolute;height:12px;background:transparent;pointer-events:none;
+  border-bottom:4px solid var(--ink);border-radius:0 0 60% 60%/0 0 100% 100%;
+  opacity:calc((.14 - var(--eo))*12)}
+#deco .xlidL{left:96px;top:207px;width:42px}
+#deco .xlidR{left:149px;top:205px;width:48px}
+/* にっこり: 目を細めて閉じ、口は大きく開いた笑い */
+#model.exp-smile #deco .n12,#model.exp-smile #deco .n11{transform:scaleY(.16)}
+#model.exp-smile #deco .u3,#model.exp-smile #deco .n15{opacity:0}
+#model.exp-smile .mouth{width:34px;height:16px;border-radius:0 0 20px 20px}
+/* びっくり: 白目拡大・黒目収縮・口は小さな円 */
+#model.exp-bikkuri #deco .n12,#model.exp-bikkuri #deco .n11{transform:scale(1.12)}
+#model.exp-bikkuri #deco .u3,#model.exp-bikkuri #deco .n15{transform:scale(.6)}
+#model.exp-bikkuri .mouth{width:15px;height:16px;border-radius:50%}
+/* ジト目: まぶたが下りて黒目も下がる */
+#model.exp-jito #deco .n12,#model.exp-jito #deco .n11{transform-origin:50% 100%;transform:scaleY(.5)}
+#model.exp-jito #deco .u3,#model.exp-jito #deco .n15{transform:translateY(5px) scale(.85)}
+#model.exp-jito .mouth{width:12px;height:5px}
+/* 怒り: 眉が内側に下がり、目が半分、口はへの字 */
+#model.exp-angry #deco .xbrowL{display:block;top:160px;transform:rotate(20deg)}
+#model.exp-angry #deco .xbrowR{display:block;top:158px;transform:rotate(-20deg)}
+#model.exp-angry #deco .n12,#model.exp-angry #deco .n11{transform-origin:50% 100%;transform:scaleY(.72)}
+#model.exp-angry .mouth{width:24px;height:10px;border-radius:12px 12px 0 0}
+/* 困り: 眉が外側に下がり、への字の小さい口 */
+#model.exp-sad #deco .xbrowL{display:block;transform:rotate(-16deg)}
+#model.exp-sad #deco .xbrowR{display:block;transform:rotate(16deg)}
+#model.exp-sad .mouth{width:16px;height:8px;border-radius:10px 10px 0 0}
+/* 目閉じ (まばたき差分) */
+#model.exp-close #deco .n12,#model.exp-close #deco .n11{transform:scaleY(.08)}
+#model.exp-close #deco .u3,#model.exp-close #deco .n15{opacity:0}
+
+/* ===== アイドルアニメ再配線 =====
+   旧 .eyes/.tee 向けのアニメは非表示パーツのため無効だった。実パーツに配線し直す。
+   インラインtransformを持つパーツは独立プロパティ(translate/rotate/scale)で合成し、
+   変数駆動のパーツはkeyframes内でvar()を参照して手動操作/トラッキングと共存させる */
+
+/* まばたき: 白目scaleYに合成。閉じは速く、開きはゆっくりの二段カーブ */
+#model.auto-blink #deco .n12,#model.auto-blink #deco .n11{animation:vtBlink2 4.6s infinite}
+@keyframes vtBlink2{
+  0%,92%,100%{transform:scaleY(var(--eo,var(--eye-open)))}
+  94%,95.5%{transform:scaleY(calc(var(--eo,var(--eye-open))*.06))}}
+#model.auto-blink #deco .u3,#model.auto-blink #deco .n15{animation:vtBlinkP 4.6s infinite}
+@keyframes vtBlinkP{0%,92.5%,99%,100%{opacity:1}94%,96%{opacity:0}}
+/* 自動まばたきの瞬間も閉じ目の線を出す */
+#model.auto-blink #deco .xlidL,#model.auto-blink #deco .xlidR{animation:vtBlinkLid 4.6s infinite}
+@keyframes vtBlinkLid{
+  0%,93.5%,96.5%,100%{opacity:calc((.14 - var(--eo,1))*12)}
+  94%,96%{opacity:1}}
+
+/* 目の泳ぎ: 視線変数(--pupil-x/y)に小さなドリフトを合成 */
+#model.auto-gaze #deco .u3,#model.auto-gaze #deco .n15{animation:vtGaze2 7s ease-in-out infinite}
+@keyframes vtGaze2{
+  0%,34%,100%{transform:translate(calc(var(--pupil-x)*7px),calc(var(--pupil-y)*5px)) scaleY(var(--eo,1))}
+  40%,58%{transform:translate(calc(var(--pupil-x)*7px + 4px),calc(var(--pupil-y)*5px - 2px)) scaleY(var(--eo,1))}
+  64%,90%{transform:translate(calc(var(--pupil-x)*7px - 3px),calc(var(--pupil-y)*5px + 1px)) scaleY(var(--eo,1))}}
+/* blink+gaze 両方ONのときは後勝ちで片方が消えるため2本同時を明示 */
+#model.auto-blink.auto-gaze #deco .u3,#model.auto-blink.auto-gaze #deco .n15{
+  animation:vtGaze2 7s ease-in-out infinite,vtBlinkP 4.6s infinite}
+
+/* 呼吸: シャツ(v2)が胸から膨らみ、袖(v3/v4)がわずかに持ち上がる */
+#model.idle-breathe .bodygrp .v2{transform-origin:50% 100%;animation:vtBreathe2 3.4s ease-in-out infinite alternate}
+@keyframes vtBreathe2{from{scale:1 1}to{scale:1.01 1.03}}
+#model.idle-breathe .bodygrp .v3,#model.idle-breathe .bodygrp .v4{
+  animation:vtBreatheUp 3.4s ease-in-out infinite alternate}
+@keyframes vtBreatheUp{from{translate:0 0}to{translate:0 -1.5px}}
+
+/* 腕のアイドルスイング: 腕(v5/v6)+手(v7/v8)。回転軸を持たないtranslateで安全に揺らす */
+#model.arm-swing .bodygrp .v5,#model.arm-swing .bodygrp .v7{animation:vtArmL 4.2s ease-in-out infinite alternate}
+#model.arm-swing .bodygrp .v6,#model.arm-swing .bodygrp .v8{animation:vtArmR 4.2s ease-in-out infinite alternate;animation-delay:.3s}
+@keyframes vtArmL{from{translate:0 0}to{translate:1.5px .5px}}
+@keyframes vtArmR{from{translate:0 0}to{translate:-1.5px .5px}}
+
+/* 体の揺れ: 足元を軸にゆっくり重心移動 */
+#model.body-sway .bob>.bodygrp{transform-origin:160px 640px;animation:vtBodySway 5.6s ease-in-out infinite alternate}
+@keyframes vtBodySway{from{rotate:-.4deg}to{rotate:.4deg}}
+
+/* ===== 追加表情 =====
+   表情中は目のアイドルアニメを止める (表情のtransformが優先される設計)。
+   blink+gaze併用ルールの方が詳細度が高いため !important で確実に切る */
+#model[class*="exp-"] #deco .n12,#model[class*="exp-"] #deco .n11,
+#model[class*="exp-"] #deco .u3,#model[class*="exp-"] #deco .n15{animation:none!important}
+/* 表情中は閉じ目線も消す (目の形は表情が決める)。目閉じ表情だけは線を出す */
+#model[class*="exp-"] #deco .xlidL,#model[class*="exp-"] #deco .xlidR{opacity:0;animation:none!important}
+#model.exp-close #deco .xlidL,#model.exp-close #deco .xlidR{opacity:1}
+
+/* 頬の赤み (照れ用、通常は非表示) */
+#deco .xcheekL,#deco .xcheekR{position:absolute;width:30px;height:11px;border-radius:50%;
+  background:#f79a8e;opacity:.9;display:none;pointer-events:none}
+#deco .xcheekL{left:78px;top:232px;transform:rotate(6deg)}
+#deco .xcheekR{left:188px;top:230px;transform:rotate(-6deg)}
+
+/* ウィンク: 左目だけ閉じる */
+#model.exp-wink #deco .n12{transform:scaleY(.1)}
+#model.exp-wink #deco .u3{opacity:0}
+#model.exp-wink .mouth{width:26px;height:12px;border-radius:0 0 16px 16px}
+
+/* 照れ: 頬に赤み + 伏し目 + 困り眉 */
+#model.exp-tere #deco .xcheekL,#model.exp-tere #deco .xcheekR{display:block}
+#model.exp-tere #deco .n12,#model.exp-tere #deco .n11{transform:scaleY(.75)}
+#model.exp-tere #deco .u3,#model.exp-tere #deco .n15{transform:translateY(3px) scale(.9)}
+#model.exp-tere #deco .xbrowL{display:block;transform:rotate(-14deg)}
+#model.exp-tere #deco .xbrowR{display:block;transform:rotate(14deg)}
+#model.exp-tere .mouth{width:20px;height:7px;border-radius:0 0 10px 10px}
+
+/* ドヤ顔: 上まぶたの半目 + ニヤリ口 */
+#model.exp-doya #deco .n12,#model.exp-doya #deco .n11{transform-origin:50% 0;transform:scaleY(.62)}
+#model.exp-doya #deco .u3,#model.exp-doya #deco .n15{transform:translateY(-2px)}
+#model.exp-doya #deco .xbrowL{display:block;top:150px;transform:rotate(-8deg)}
+#model.exp-doya #deco .xbrowR{display:block;top:148px;transform:rotate(8deg)}
+#model.exp-doya .mouth{width:28px;height:13px;border-radius:2px 2px 18px 6px}
+
+/* ねむい: とろんとした半目 + 小さいあくび口 */
+#model.exp-nemui #deco .n12,#model.exp-nemui #deco .n11{transform:scaleY(.32)}
+#model.exp-nemui #deco .u3,#model.exp-nemui #deco .n15{transform:translateY(5px) scale(.9);opacity:.85}
+#model.exp-nemui #deco .xbrowL{display:block;top:158px;transform:rotate(-6deg)}
+#model.exp-nemui #deco .xbrowR{display:block;top:156px;transform:rotate(6deg)}
+#model.exp-nemui .mouth{width:11px;height:11px;border-radius:50%}
+
+/* 目を回す: 黒目がぐるぐる + 口ふにゃ (killルールと同じ!important+後置で勝たせる) */
+#model.exp-guru #deco .u3,#model.exp-guru #deco .n15{animation:vtDizzy .8s linear infinite!important}
+@keyframes vtDizzy{
+  0%{transform:translate(4px,0)}25%{transform:translate(0,4px)}
+  50%{transform:translate(-4px,0)}75%{transform:translate(0,-4px)}
+  100%{transform:translate(4px,0)}}
+#model.exp-guru #deco .n12,#model.exp-guru #deco .n11{transform:scale(1.06)}
+#model.exp-guru .mouth{width:20px;height:12px;
+  border-radius:45% 55% 60% 40%/55% 45% 55% 45%;transform:translateX(-50%) rotate(-6deg)}
+
+/* ===== ポーズ (手上げ/バイバイ/考える) =====
+   pose-* クラスで腕(v5/v6)・手(v7/v8)・袖(v3/v4)の配置を差し替える。
+   カメラのポーズ検出 or controllerのボタンで付与。座標は目視調整済みの初期値 */
+/* 腕は体レイヤー(頭より後ろ)にあるため、真上に上げると頭に隠れる。
+   頭身が低いキャラなので「顔の横45°」に上げて、頭・髪・耳にかからない配置にする */
+#model.pose-raise-l .bodygrp .v5{left:49px;top:272px;transform:rotate(-55deg)}
+#model.pose-raise-l .bodygrp .v7{left:-36px;top:245px;transform:rotate(-35deg)}
+#model.pose-raise-l .bodygrp .v3{left:58px;top:298px;transform:rotate(-55deg)}
+#model.pose-raise-r .bodygrp .v6{left:233px;top:270px;transform:rotate(55deg)}
+#model.pose-raise-r .bodygrp .v8{left:277px;top:243px;transform:rotate(35deg)}
+#model.pose-raise-r .bodygrp .v4{left:202px;top:292px;transform:rotate(55deg)}
+/* バイバイ: 上げている側の手を振る (独立rotateがポーズのtransformに合成される) */
+#model.pose-wave.pose-raise-l .bodygrp .v7{animation:vtWave .7s ease-in-out infinite alternate}
+#model.pose-wave.pose-raise-r .bodygrp .v8{animation:vtWave .7s ease-in-out infinite alternate}
+@keyframes vtWave{from{rotate:-14deg}to{rotate:14deg}}
+/* 考える: 右腕を曲げて手をあごへ */
+#model.pose-think .bodygrp .v6{left:194px;top:308px;transform:rotate(-58deg)}
+#model.pose-think .bodygrp .v8{left:150px;top:258px;transform:rotate(-12deg) scale(.92)}
+/* 手を前に: 両手を胸の前に上げる(ワクワク)。手はz-indexでシャツの前、
+   腕は肩から内側に曲げ(scaleYで短縮)、シャツの後ろに隠れて自然に見える */
+#model.pose-front .bodygrp .v5{left:99px;top:289px;transform:rotate(-30deg) scaleY(.55)}
+#model.pose-front .bodygrp .v6{left:178px;top:287px;transform:rotate(30deg) scaleY(.55)}
+#model.pose-front .bodygrp .v7{left:104px;top:318px;transform:rotate(-12deg);z-index:2}
+#model.pose-front .bodygrp .v8{left:138px;top:316px;transform:rotate(12deg);z-index:2}
+
+/* ===== エモート (頭の横に出るリアクションマーク) =====
+   {type:'emo', name} で emo-* クラスが付き、一度ポップして消える(forwards)。
+   マークはすべてCSS描画 (!?とzzZは文字グリフ+縁取り) */
+#deco .xemo{position:absolute;left:230px;top:46px;width:30px;height:30px;
+  opacity:0;pointer-events:none;transform-origin:50% 100%;
+  font:900 26px/30px 'Segoe UI',system-ui,sans-serif;text-align:center}
+#model.emo-heart #deco .eheart,#model.emo-anger #deco .eanger,#model.emo-sweat #deco .esweat,
+#model.emo-ex #deco .eex,#model.emo-q #deco .eq,#model.emo-zzz #deco .ezzz{
+  animation:vtEmo 2.2s cubic-bezier(.2,1.2,.4,1) forwards}
+@keyframes vtEmo{
+  0%{opacity:0;transform:scale(.2) translateY(10px)}
+  12%,72%{opacity:1;transform:scale(1) translateY(0)}
+  100%{opacity:0;transform:scale(1.08) translateY(-16px)}}
+#deco .eheart{background:#ff5b76;
+  clip-path:polygon(50% 100%,18% 68%,4% 44%,7% 22%,22% 8%,38% 10%,50% 24%,62% 10%,78% 8%,93% 22%,96% 44%,82% 68%)}
+#deco .eanger::before,#deco .eanger::after{content:'';position:absolute;width:13px;height:5px;
+  border-radius:3px;background:#ff5252}
+#deco .eanger::before{left:1px;top:6px;transform:rotate(45deg);box-shadow:8px 13px 0 #ff5252}
+#deco .eanger::after{right:1px;top:6px;transform:rotate(-45deg);box-shadow:-8px 13px 0 #ff5252}
+#deco .esweat::before,#deco .esweat::after{content:'';position:absolute;background:#6ec6ff;
+  border-radius:4px 50% 50% 50%;transform:rotate(45deg)}
+#deco .esweat::before{left:4px;top:9px;width:14px;height:14px}
+#deco .esweat::after{left:19px;top:2px;width:9px;height:9px;opacity:.8}
+#deco .eex::before{content:'!';color:#ffb02e;-webkit-text-stroke:2px var(--line)}
+#deco .eq::before{content:'?';color:#8ab4f8;-webkit-text-stroke:2px var(--line)}
+#deco .ezzz{font-size:14px;font-style:italic;color:#7f9dff}
+#deco .ezzz::before{content:'z';position:absolute;left:2px;top:12px}
+#deco .ezzz::after{content:'Z';position:absolute;left:12px;top:-2px;font-size:22px}
+
+/* ===== 特殊目 (ハート目/星目)。渦巻き目は exp-guru ===== */
+#deco .xeyeL,#deco .xeyeR{position:absolute;display:none;pointer-events:none}
+#deco .xeyeL{left:112px;top:191px;width:24px;height:22px}
+#deco .xeyeR{left:151px;top:188px;width:26px;height:24px}
+#model.exp-heart #deco .xeyeL,#model.exp-heart #deco .xeyeR{display:block;background:#ff5b76;
+  clip-path:polygon(50% 100%,18% 68%,4% 44%,7% 22%,22% 8%,38% 10%,50% 24%,62% 10%,78% 8%,93% 22%,96% 44%,82% 68%);
+  animation:vtEyeBeat .7s ease-in-out infinite alternate}
+@keyframes vtEyeBeat{from{scale:1}to{scale:1.2}}
+#model.exp-heart #deco .u3,#model.exp-heart #deco .n15{opacity:0}
+#model.exp-heart .mouth{width:30px;height:14px;border-radius:0 0 18px 18px}
+#model.exp-star #deco .xeyeL,#model.exp-star #deco .xeyeR{display:block;background:#ffd23e;
+  clip-path:polygon(50% 0%,61% 33%,98% 35%,68% 57%,79% 91%,50% 70%,21% 91%,32% 57%,2% 35%,39% 33%);
+  animation:vtEyeSpin 2.6s linear infinite}
+@keyframes vtEyeSpin{from{rotate:0deg}to{rotate:360deg}}
+#model.exp-star #deco .u3,#model.exp-star #deco .n15{opacity:0}
+#model.exp-star .mouth{width:26px;height:15px;border-radius:0 0 16px 16px}
+
+/* ===== アイテム (マグカップ=右手/ペンライト=左手)。CSSのみで描画 ===== */
+.bodygrp .xcup,.bodygrp .xlight{display:none;pointer-events:none}
+#model.item-cup .bodygrp .xcup{display:block}
+.bodygrp .xcup{left:206px;top:428px;width:34px;height:28px;background:#fff7ec;
+  border-radius:4px 4px 10px 10px}
+.bodygrp .xcup::before{content:'';position:absolute;right:-11px;top:5px;width:11px;height:13px;
+  border:5px solid #fff7ec;border-radius:50%}
+.bodygrp .xcup::after{content:'';position:absolute;left:6px;top:-13px;width:4px;height:9px;
+  border-radius:3px;background:rgba(255,255,255,.9);
+  box-shadow:9px -3px 0 rgba(255,255,255,.7);
+  animation:vtSteam 2.4s ease-in-out infinite}
+@keyframes vtSteam{0%,100%{opacity:.15;translate:0 0}50%{opacity:.9;translate:0 -5px}}
+#model.pose-raise-r .bodygrp .xcup,#model.pose-think .bodygrp .xcup{display:none!important}
+#model.item-light .bodygrp .xlight{display:block}
+.bodygrp .xlight{left:58px;top:404px;width:9px;height:40px;border-radius:5px;background:#9be8ff;
+  transform:rotate(-16deg);transform-origin:50% 95%;
+  box-shadow:0 0 10px 3px rgba(120,220,255,.75)}
+.bodygrp .xlight::after{content:'';position:absolute;left:0;bottom:-12px;width:9px;height:13px;
+  background:#5a5f66;border-radius:3px}
+#model.pose-raise-l .bodygrp .xlight{display:none!important}
+
+/* ===== ノリノリモード (リズム全身ゆれ。1拍= --beat 秒、テンポはcontrollerから) ===== */
+#model.mode-groove .bob{animation:vtGroove calc(var(--beat,.5)*2s) ease-in-out infinite}
+@keyframes vtGroove{0%,100%{translate:0 0}50%{translate:0 6px}}
+#model.mode-groove .head,#model.mode-groove #deco,#model.mode-groove #decoBack{
+  animation:vtGrooveHead calc(var(--beat,.5)*2s) ease-in-out infinite}
+@keyframes vtGrooveHead{0%,100%{translate:0 0;rotate:-1.6deg}50%{translate:0 5px;rotate:1.6deg}}
+#model.mode-groove .bodygrp .v5,#model.mode-groove .bodygrp .v7{
+  animation:vtGrooveL calc(var(--beat,.5)*2s) ease-in-out infinite}
+#model.mode-groove .bodygrp .v6,#model.mode-groove .bodygrp .v8{
+  animation:vtGrooveR calc(var(--beat,.5)*2s) ease-in-out infinite}
+@keyframes vtGrooveL{0%,100%{rotate:0deg;translate:0 0}50%{rotate:-10deg;translate:-2px -5px}}
+@keyframes vtGrooveR{0%,100%{rotate:0deg;translate:0 0}50%{rotate:10deg;translate:2px -5px}}
+#model.mode-groove .bob>.bodygrp{animation:vtGrooveBody calc(var(--beat,.5)*4s) ease-in-out infinite}
+@keyframes vtGrooveBody{0%,100%{rotate:-1.4deg}50%{rotate:1.4deg}}
+/* ノリノリ×ペンライト = 振る */
+#model.mode-groove.item-light .bodygrp .xlight{
+  animation:vtLightSwing calc(var(--beat,.5)*2s) ease-in-out infinite}
+@keyframes vtLightSwing{0%,100%{rotate:-26deg}50%{rotate:26deg}}
+
+/* キャラの縁取り: 全レイヤー合成後のシルエット外周にインク線 (no-ink中はなし) */
+#model:not(.no-ink) .bob{
+  filter:drop-shadow(calc(var(--line-out)*1px) 0 0 var(--line))
+         drop-shadow(calc(var(--line-out)*-1px) 0 0 var(--line))
+         drop-shadow(0 calc(var(--line-out)*1px) 0 var(--line))
+         drop-shadow(0 calc(var(--line-out)*-1px) 0 var(--line))}
+/* 内側の輪郭線: 顔+耳・襟足・体の合成シルエット (髪は外周線のみ)。
+   後ろにある部分の線は前のパーツで隠れる */
+#model:not(.no-ink) .facegrp,
+#model:not(.no-ink) .bob>.bodygrp,
+#model:not(.no-ink) #decoBack{
+  filter:drop-shadow(calc(var(--line-in)*1px) 0 0 var(--line))
+         drop-shadow(calc(var(--line-in)*-1px) 0 0 var(--line))
+         drop-shadow(0 calc(var(--line-in)*1px) 0 var(--line))
+         drop-shadow(0 calc(var(--line-in)*-1px) 0 var(--line))}
+/* 自由レイヤー: 線や図形をモデル全域に置ける */
+#deco{position:absolute;inset:0;z-index:60;pointer-events:none}
+#deco i{position:absolute;pointer-events:auto;cursor:move;background:var(--hair)}
+/* 最背面レイヤー: 顔より後ろに描かれる (襟足・もみあげ等) */
+#decoBack{position:absolute;inset:0;z-index:0;pointer-events:none}
+#decoBack i{position:absolute;pointer-events:auto;cursor:move;background:var(--hair)}
+/* ===== ユーザートレース: 自由レイヤー ===== */
+/* 白目ユニット: 2つの白円の合成シルエット外周だけを縁取り (重なりの内側は白のまま) */
+#deco .eyegrp{position:absolute;inset:0;pointer-events:none}
+/* 体ユニット: 顔より後ろ・襟足より前の専用レイヤー (あごが襟にかぶさる)。
+   首振りに合わせて体が遅れて傾く (transitionが慣性になる) */
+.bob>.bodygrp{position:absolute;inset:0;pointer-events:none;
+  transform-origin:160px 640px;
+  transform:translateX(calc(var(--yaw)*5px)) rotate(calc(var(--yaw)*-1.2deg));
+  transition:transform .35s cubic-bezier(.33,1.3,.5,1)}
+.bodygrp i{position:absolute;pointer-events:auto;cursor:move;background:var(--hair)}
+#model:not(.no-ink) #deco .eyegrp{
+  filter:drop-shadow(calc(var(--line-in)*1px) 0 0 var(--line))
+         drop-shadow(calc(var(--line-in)*-1px) 0 0 var(--line))
+         drop-shadow(0 calc(var(--line-in)*1px) 0 var(--line))
+         drop-shadow(0 calc(var(--line-in)*-1px) 0 var(--line))}
+#deco .n12{left:89px;top:174px;width:57px;height:56px;border-radius:50%;background:#fff}
+.hair .n2{left:147px;top:77px;width:55px;height:67px;transform:rotate(-68deg);clip-path:polygon(55% 0%,62% 12%,68% 26%,73% 40%,77% 53%,78% 64%,75% 76%,68% 88%,57% 96%,45% 100%,33% 96%,25% 87%,21% 75%,22% 62%,26% 49%,33% 35%,41% 21%,48% 10%)}
+#deco .n11{left:141px;top:171px;width:65px;height:61px;border-radius:50%;background:#fff}
+#deco .n14{left:20px;top:144px;width:44px;height:44px;border-radius:50%}
+#deco .n19{left:239px;top:137px;width:44px;height:44px;border-radius:50%}
+#deco .n1{left:66px;top:20px;width:85px;height:93px;border-radius:50%;transform:rotate(41deg);background:#fff}
+/* --- 2周目トレース (重複クラスは u1〜u6 にリネーム) --- */
+.hair .u1{left:83px;top:-57px;width:54px;height:77px;transform:rotate(-68deg);clip-path:polygon(60% 0%,72% 6%,82% 16%,88% 28%,89% 42%,85% 56%,77% 70%,65% 82%,50% 92%,34% 98%,22% 100%,30% 90%,40% 80%,49% 69%,56% 57%,61% 44%,63% 30%,62% 16%)}
+#decoBack .u2{left:191px;top:129px;width:70px;height:81px;transform:rotate(-9deg);clip-path:polygon(70% 0%,84% 8%,93% 22%,96% 38%,92% 56%,82% 72%,66% 86%,46% 96%,26% 100%,36% 84%,44% 68%,50% 52%,54% 36%,58% 20%,63% 8%)}
+#decoBack .n4{left:27px;top:115px;width:62px;height:100px;transform:rotate(151deg);clip-path:polygon(70% 0%,84% 8%,93% 22%,96% 38%,92% 56%,82% 72%,66% 86%,46% 96%,26% 100%,36% 84%,44% 68%,50% 52%,54% 36%,58% 20%,63% 8%)}
+#decoBack .n5{left:180px;top:107px;width:64px;height:67px;transform:rotate(-144deg);clip-path:polygon(30% 0%,16% 8%,7% 22%,4% 38%,8% 56%,18% 72%,34% 86%,54% 96%,74% 100%,64% 84%,56% 68%,50% 52%,46% 36%,42% 20%,37% 8%)}
+#deco .u3{left:121px;top:192px;width:11px;height:20px;border-radius:50%;background:radial-gradient(13% 9% at 66% 22%,#fff 98%,#241d18 100%)}
+#deco .n15{left:158px;top:190px;width:12px;height:22px;border-radius:50%;background:radial-gradient(13% 9% at 66% 22%,#fff 98%,#241d18 100%)}
+#decoBack .u4{left:189px;top:223px;width:64px;height:44px;transform:rotate(136deg);clip-path:polygon(60% 0%,72% 6%,82% 16%,88% 28%,89% 42%,85% 56%,77% 70%,65% 82%,50% 92%,34% 98%,22% 100%,30% 90%,40% 80%,49% 69%,56% 57%,61% 44%,63% 30%,62% 16%)}
+#decoBack .n21{left:92px;top:255px;width:30px;height:34px;clip-path:polygon(70% 0%,84% 8%,93% 22%,96% 38%,92% 56%,82% 72%,66% 86%,46% 96%,26% 100%,36% 84%,44% 68%,50% 52%,54% 36%,58% 20%,63% 8%)}
+#decoBack .n27{left:164px;top:235px;width:64px;height:44px;transform:rotate(170deg);clip-path:polygon(60% 0%,72% 6%,82% 16%,88% 28%,89% 42%,85% 56%,77% 70%,65% 82%,50% 92%,34% 98%,22% 100%,30% 90%,40% 80%,49% 69%,56% 57%,61% 44%,63% 30%,62% 16%)}
+#decoBack .n28{left:-16px;top:125px;width:81px;height:62px;transform:rotate(43deg);clip-path:polygon(70% 0%,84% 8%,93% 22%,96% 38%,92% 56%,82% 72%,66% 86%,46% 96%,26% 100%,36% 84%,44% 68%,50% 52%,54% 36%,58% 20%,63% 8%)}
+#decoBack .u5{left:198px;top:211px;width:64px;height:44px;transform:rotate(136deg);background:var(--hair);clip-path:polygon(60% 0%,72% 6%,82% 16%,88% 28%,89% 42%,85% 56%,77% 70%,65% 82%,50% 92%,34% 98%,22% 100%,30% 90%,40% 80%,49% 69%,56% 57%,61% 44%,63% 30%,62% 16%)}
+.bodygrp .u6{left:123px;top:271px;width:49px;height:23px;border-radius:50%;background:#f9eace;clip-path:polygon(22% 0%,78% 0%,100% 100%,0% 100%)}
+/* --- Fable本組み: 参考画像の比率(頭部スケール換算0.455)で首から下を構築 ---
+   下絵デフォルト配置(大きさ840/下132)と重なる設計 */
+.bodygrp .v5{left:74px;top:359px;width:13px;height:102px;border-radius:7px;transform:rotate(19deg);background:#f9eace}
+.bodygrp .v6{left:207px;top:352px;width:13px;height:102px;border-radius:7px;transform:rotate(-21deg);background:#f9eace}
+.bodygrp .v7{left:40px;top:446px;width:54px;height:64px;border-radius:42% 42% 48% 48%;background:#f9eace}
+.bodygrp .v8{left:202px;top:446px;width:54px;height:64px;border-radius:42% 42% 48% 48%;background:#f9eace}
+.bodygrp .v9{left:56px;top:458px;width:3px;height:26px;border-radius:2px;background:#241d18}
+.bodygrp .v10{left:68px;top:461px;width:3px;height:26px;border-radius:2px;background:#241d18}
+.bodygrp .v11{left:225px;top:458px;width:3px;height:26px;border-radius:2px;background:#241d18}
+.bodygrp .v12{left:237px;top:461px;width:3px;height:26px;border-radius:2px;background:#241d18}
+.bodygrp .v17{left:111px;top:471px;width:15px;height:92px;background:#f9eace}
+.bodygrp .v18{left:169px;top:478px;width:15px;height:92px;background:#f9eace}
+.bodygrp .v19{left:32px;top:574px;width:112px;height:74px;border-radius:46% 46% 12px 12px;background:#9b9b9b}
+.bodygrp .v20{left:152px;top:574px;width:112px;height:74px;border-radius:46% 46% 12px 12px;background:#9b9b9b}
+.bodygrp .v21{left:99px;top:598px;width:34px;height:14px;border-radius:6px;transform:rotate(-18deg);background:#7d7d7d}
+.bodygrp .v22{left:162px;top:599px;width:34px;height:14px;border-radius:6px;transform:rotate(18deg);background:#7d7d7d}
+.bodygrp .v23{left:30px;top:624px;width:116px;height:16px;border-radius:6px;background:#f2cf1d}
+.bodygrp .v24{left:150px;top:624px;width:116px;height:16px;border-radius:6px;background:#f2cf1d}
+.bodygrp .v25{left:28px;top:640px;width:120px;height:14px;border-radius:7px;background:#d9d9d9}
+.bodygrp .v26{left:148px;top:640px;width:120px;height:14px;border-radius:7px;background:#d9d9d9}
+.bodygrp .v13{left:98px;top:415px;width:98px;height:67px;border-radius:8px 8px 12px 12px;background:#9b9b9b}
+.bodygrp .v14{left:147px;top:445px;width:4px;height:38px;border-radius:2px;background:#6f6f6f}
+.bodygrp .v15{left:115px;top:433px;width:3px;height:20px;border-radius:2px;transform:rotate(20deg);background:#6f6f6f}
+.bodygrp .v16{left:184px;top:431px;width:3px;height:20px;border-radius:2px;transform:rotate(-20deg);background:#6f6f6f}
+.bodygrp .v3{left:85px;top:290px;width:35px;height:78px;border-radius:18px 18px 12px 12px;transform:rotate(18deg);background:var(--tee)}
+.bodygrp .v4{left:177px;top:287px;width:34px;height:86px;border-radius:18px 18px 12px 12px;transform:rotate(-18deg);background:var(--tee)}
+.bodygrp .v2{left:99px;top:287px;width:98px;height:148px;border-radius:26px 26px 10px 10px;background:var(--tee)}
+/* 足首カバー (靴の上の楕円) */
+.bodygrp .n25{left:162px;top:554px;width:56px;height:44px;border-radius:50%;background:#9b9b9b}
+.bodygrp .n26{left:75px;top:553px;width:56px;height:44px;border-radius:50%;background:#9b9b9b}
+.hair .n34{left:210px;top:104px;width:65px;height:64px;transform:rotate(-60deg);clip-path:polygon(30% 0%,16% 8%,7% 22%,4% 38%,8% 56%,18% 72%,34% 86%,54% 96%,74% 100%,64% 84%,56% 68%,50% 52%,46% 36%,42% 20%,37% 8%)}
+/* ベースモデルの各パーツも編集対象 */
+.feat .eye,.feat .mouth{pointer-events:auto;cursor:move}
+.ear,.facegrp .f-base{pointer-events:auto}
+.ear i{pointer-events:auto;cursor:move}
+.ear,.neck,.tee,.collar,.facegrp .f-base{cursor:move}
+/* ベースモデルを隠してトレースに集中 */
+#model.hide-base .bob>*{visibility:hidden}
+#model.hide-base #deco,#model.hide-base #decoBack{visibility:visible}
+
+/* 目: このキャラのキー。左をやや小さくした2円を「重ねて」配置。
+   輪郭は各円のborderではなく drop-shadow で合成シルエットの外周のみに付けるので、
+   重なった内側は線が通らず白のままつながる */
+/* 旧目はトレース版(自由レイヤーの白目)に置換のため非表示。瞳トレース後にM2で再構成 */
+.eyes{display:none;position:absolute;inset:0;
+      transform-origin:130px 165px;
+      transform:translateY(calc(var(--eyeu-y)*12px)) scale(var(--eyeu-s));
+      filter:drop-shadow(4px 0 0 var(--ink)) drop-shadow(-4px 0 0 var(--ink))
+             drop-shadow(0 4px 0 var(--ink)) drop-shadow(0 -4px 0 var(--ink))}
+.eye{position:absolute;background:#fff;border-radius:50%;
+     transform:scaleY(max(var(--eye-open),0.05))}
+.eye.l{left:76px;top:137px;width:58px;height:58px}
+.eye.r{left:120px;top:133px;width:64px;height:64px}
+#model.auto-blink .eye{animation:vtBlink 4.6s infinite}
+@keyframes vtBlink{0%,93%,100%{transform:scaleY(1)}96%{transform:scaleY(.06)}}
+
+/* 黒目: ゆるやかな縦長楕円 14x22 */
+.pupil{position:absolute;
+       width:calc(14px*var(--pupil-scale));height:calc(22px*var(--pupil-scale));
+       left:calc(50% - 7px*var(--pupil-scale) + var(--yaw)*9px + var(--pupil-x)*9px);
+       top:calc(50% - 11px*var(--pupil-scale) + var(--pitch)*5px + var(--pupil-y)*6px);
+       background:var(--ink);border-radius:50%}
+/* 瞳ハイライト: 右上内側の小さな光の反射 (生命感のキー) */
+.pupil::after{content:"";position:absolute;top:3px;right:2px;width:5px;height:5px;
+              background:#fff;border-radius:50%}
+#model.auto-gaze .pupil{animation:vtGaze 7s ease-in-out infinite}
+@keyframes vtGaze{0%,34%,100%{transform:translate(0,0)}
+                  40%,58%{transform:translate(5px,-2px)}
+                  64%,90%{transform:translate(-3px,1px)}}
+
+.mouth{position:absolute;top:226px;left:136px;
+       transform:translateX(-50%) translateY(calc(var(--mouth-y)*12px)) scale(var(--mouth-s));
+       transform-origin:center top;
+       /* --mouth-w: にやり(+)で横に広く、すぼめ(-)で細く。
+          縦はカメラの口(--mouth-open)とマイク音量(--mic)の大きい方で開く */
+       width:calc(17px*(1 + var(--mouth-w,0)));
+       height:calc(6px + max(var(--mouth-open), var(--mic,0))*26px);
+       background:var(--ink);border-radius:8px 8px 12px 12px}
+
+/* ========== 調整パネル ========== */
+#panel{width:300px;max-height:100vh;overflow-y:auto;background:#fff;
+       border-left:2px solid #e5ddcf;padding:16px 18px 32px;flex-shrink:0}
+#panel.hidden{display:none}
+#panel h1{font-size:15px;margin:0 0 4px;color:#241d18}
+#panel .hint{font-size:11px;color:#8a8175;margin:0 0 14px}
+#panel h2{font-size:12px;margin:18px 0 8px;color:#f5741d;
+          border-bottom:2px solid #f6e3d2;padding-bottom:4px;letter-spacing:.05em}
+.row{display:flex;align-items:center;gap:8px;margin:7px 0;font-size:12px;color:#40382f}
+.row label{width:86px;flex-shrink:0}
+.row input[type=range]{flex:1;accent-color:#f5741d;min-width:0}
+.row output{width:38px;text-align:right;font-variant-numeric:tabular-nums;color:#8a8175}
+.row input[type=color]{width:34px;height:24px;border:1px solid #ddd;border-radius:4px;padding:0;background:none}
+.toggles{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:#40382f}
+.toggles label{display:flex;align-items:center;gap:5px;cursor:pointer}
+.toggles input{accent-color:#f5741d}
+.presets{display:flex;flex-wrap:wrap;gap:6px}
+.presets button,#panel .act{font-size:12px;padding:5px 10px;border:2px solid #241d18;
+       border-radius:8px;background:#fff;cursor:pointer;color:#241d18}
+.presets button:hover,#panel .act:hover{background:#ffe9d6}
+#panel .act{display:block;width:100%;margin-top:8px}
+#panel .act.primary{background:#f5741d;border-color:#f5741d;color:#fff}
+#panel .act.primary:hover{background:#e0630e}
+
+/* ================================================================
+   ★ びんぞうスキン ★ 寝そべった緑ビンの付喪神。ジト目・白手袋・ナイフ
+   (複製+後置上書き方式。パーツ流用: f-base=胴 b8=ラベル b1,b3=注ぎ口
+    v7,v8=手袋 xlight=ナイフに改装(アイテム「ペンライト」で持つ))
+   ================================================================ */
+#model{--hair:#4f9e4a}
+
+/* 使わないパーツを隠す */
+.ear.l,.ear.r,.hair .b2,.hair .b4,.hair .n2,.hair .n34,.hair .u1,
+#decoBack .n4,#decoBack .n5,#decoBack .n21,#decoBack .n27,#decoBack .n28,#decoBack .u5,
+#decoBack .u2,#decoBack .u4,#deco .n14,#deco .n19,#deco .n1,
+.bodygrp .u6,.bodygrp .v2,.bodygrp .v3,.bodygrp .v4,.bodygrp .v5,.bodygrp .v6,
+.bodygrp .v9,.bodygrp .v10,.bodygrp .v11,.bodygrp .v12,.bodygrp .v13,.bodygrp .v14,
+.bodygrp .v15,.bodygrp .v16,.bodygrp .v17,.bodygrp .v18,.bodygrp .v19,.bodygrp .v20,
+.bodygrp .v21,.bodygrp .v22,.bodygrp .v23,.bodygrp .v24,.bodygrp .v25,.bodygrp .v26,
+.bodygrp .n25,.bodygrp .n26{display:none}
+
+/* 横たわったビンの胴 (上面にツヤ・下面に影) + ラベル */
+.facegrp .f-base{left:-25px;top:255px;width:300px;height:130px;
+  background-color:var(--hair);
+  background-image:linear-gradient(180deg,rgba(255,255,255,.28),transparent 35%,rgba(0,0,0,.12) 88%);
+  clip-path:polygon(5% 0%,95% 0%,98% 6%,100% 20%,100% 80%,98% 94%,95% 100%,
+    5% 100%,2% 94%,0% 80%,0% 20%,2% 6%)}
+.hair .b8{left:70px;top:263px;width:130px;height:62px;border-radius:10px;background:#e8e6da}
+/* 左に突き出た注ぎ口 */
+.hair .b1{left:-58px;top:292px;width:66px;height:38px;border-radius:8px 2px 2px 8px;background:#3a7a36}
+.hair .b3{left:-70px;top:296px;width:20px;height:30px;border-radius:50%;background:#2c5c29}
+
+/* ジト目 (白目の上辺をフラットに=まぶた)。黒目は下寄り */
+#deco .n12{left:148px;top:350px;width:40px;height:32px;border-radius:0 0 46% 46%}
+#deco .n11{left:198px;top:348px;width:46px;height:34px;border-radius:0 0 46% 46%}
+#deco .u3{left:160px;top:364px;width:10px;height:15px}
+#deco .n15{left:212px;top:362px;width:11px;height:16px}
+#deco .xlidL{left:150px;top:372px;width:36px}
+#deco .xlidR{left:202px;top:370px;width:42px}
+#deco .xbrowL{left:150px;top:320px}
+#deco .xbrowR{left:206px;top:316px}
+#deco .xcheekL{left:128px;top:392px}
+#deco .xcheekR{left:232px;top:388px}
+#deco .xeyeL{left:154px;top:352px;width:24px;height:22px}
+#deco .xeyeR{left:206px;top:350px;width:26px;height:24px}
+#deco .xemo{left:250px;top:250px}
+
+/* 口 (目の下・ひかえめ) */
+.mouth{left:146px;top:366px;
+  width:calc(16px*(1 + var(--mouth-w,0)));
+  height:calc(6px + max(var(--mouth-open), var(--mic,0))*22px);
+  border-radius:6px 6px 10px 10px}
+
+/* 両端の白手袋。ナイフはペンライト(item-light)を改装して右手に */
+.bodygrp .v7{left:-4px;top:330px;width:46px;height:50px;background:#f4f2ea}
+.bodygrp .v8{left:276px;top:314px;width:48px;height:54px;background:#f4f2ea}
+.bodygrp .xlight{left:296px;top:238px;width:16px;height:76px;
+  transform:rotate(14deg);transform-origin:50% 95%;box-shadow:none;
+  background:linear-gradient(180deg,#e8e8e0,#b9b9b0);
+  clip-path:polygon(45% 0%,100% 12%,88% 78%,88% 100%,12% 100%,12% 78%,0% 12%)}
+.bodygrp .xcup{left:282px;top:300px}
+
+/* ごろごろ揺れ: ビンらしく中心軸でわずかに転がる */
+.bob{transform-origin:160px 340px}
+#model.body-sway .bob{animation:bnRoll 5.2s ease-in-out infinite}
+#model.idle-bob.body-sway .bob{
+  animation:vtBob 3.4s ease-in-out infinite alternate,bnRoll 5.2s ease-in-out infinite}
+@keyframes bnRoll{0%,100%{rotate:-1.6deg}50%{rotate:1.6deg}}
+</style>
+</head>
+<body>
+
+<div id="stage">
+  <img id="refImg" alt="">
+  <video id="camVid" autoplay playsinline muted style="display:none"></video>
+  <div id="model" class="auto-blink auto-gaze idle-bob idle-breathe hair-sway hair-follow arm-swing body-sway">
+    <div class="bob">
+      <div id="decoBack">
+        <i class="u2"></i><i class="n5"></i><i class="u4"></i><i class="u5"></i>
+        <i class="n4"></i><i class="n21"></i><i class="n27"></i><i class="n28"></i>
+      </div>
+      <div class="neck"></div>
+      <div class="tee"></div>
+      <div class="collar"></div>
+      <span class="bodygrp">
+        <i class="v5"></i><i class="v6"></i><i class="v7"></i><i class="v8"></i>
+        <i class="v9"></i><i class="v10"></i><i class="v11"></i><i class="v12"></i>
+        <i class="v17"></i><i class="v18"></i><i class="v19"></i><i class="v20"></i>
+        <i class="v21"></i><i class="v22"></i><i class="v23"></i><i class="v24"></i>
+        <i class="v25"></i><i class="v26"></i><i class="v13"></i><i class="v14"></i>
+        <i class="v15"></i><i class="v16"></i><i class="v3"></i><i class="v4"></i>
+        <i class="v2"></i><i class="u6"></i><i class="n25"></i><i class="n26"></i>
+        <i class="xcup"></i><i class="xlight"></i>
+      </span>
+      <div class="head">
+        <div class="facegrp">
+          <div class="ear l"><i class="e1"></i><i class="e2"></i></div>
+          <div class="ear r"><i class="e1"></i><i class="e2"></i></div>
+          <i class="f-base"></i>
+        </div>
+        <div class="hair">
+          <i class="b2"></i><i class="b3"></i>
+          <i class="b1"></i><i class="b4"></i><i class="b8"></i>
+          <i class="u1"></i><i class="n2"></i><i class="n34"></i>
+        </div>
+        <div class="feat">
+          <div class="eyes">
+            <div class="eye l"><div class="pupil"></div></div>
+            <div class="eye r"><div class="pupil"></div></div>
+          </div>
+          <div class="mouth"></div>
+        </div>
+      </div>
+      <div id="deco">
+        <span class="eyegrp"><i class="n12"></i><i class="n11"></i></span>
+        <i class="n14"></i><i class="n19"></i><i class="n1"></i>
+        <i class="u3"></i><i class="n15"></i>
+        <i class="xbrowL"></i><i class="xbrowR"></i>
+        <i class="xcheekL"></i><i class="xcheekR"></i>
+        <i class="xlidL"></i><i class="xlidR"></i>
+        <i class="xeyeL"></i><i class="xeyeR"></i>
+        <i class="xemo eheart"></i><i class="xemo eanger"></i><i class="xemo esweat"></i>
+        <i class="xemo eex"></i><i class="xemo eq"></i><i class="xemo ezzz"></i>
+      </div>
+    </div>
+  </div>
+</div>
+
+<aside id="panel">
+  <h1>髪型エディタ</h1>
+  <p class="hint">髪パーツをクリックで選択、そのままドラッグで移動。Hキーでパネル切替 / ?obs で配信モード</p>
+
+  <h2>選択中: <span id="selName">なし</span></h2>
+  <div class="row"><label>パーツ選択</label>
+    <select id="pickSel" style="flex:1;min-width:0;font-size:12px">
+      <option value="">(キャンバスでクリック)</option>
+      <option value=".ear.l">耳 左</option>
+      <option value=".ear.r">耳 右</option>
+      <option value=".facegrp .f-base">輪郭</option>
+      <option value=".mouth">口</option>
+    </select>
+  </div>
+  <p class="hint">被って掴めないパーツはここから選択。選択中は矢印キーで1px、Shift+矢印で10px移動</p>
+  <div class="row"><label>X</label><input type="range" id="hx" min="-60" max="300" value="0"><output>-</output></div>
+  <div class="row"><label>Y</label><input type="range" id="hy" min="-60" max="240" value="0"><output>-</output></div>
+  <div class="row"><label>幅</label><input type="range" id="hw" min="6" max="220" value="40"><output>-</output></div>
+  <div class="row"><label>高さ</label><input type="range" id="hh" min="6" max="220" value="40"><output>-</output></div>
+  <div class="row"><label>角度</label><input type="range" id="hr" min="-180" max="180" value="0"><output>-</output></div>
+  <div class="row"><label>丸み%</label><input type="range" id="hb" min="0" max="50" value="50"><output>-</output></div>
+  <div class="row"><label>色</label><input type="color" id="hcol" value="#f5741d"></div>
+  <div class="row"><label>光 X</label><input type="range" id="gx" min="0" max="100" value="66"><output>66</output></div>
+  <div class="row"><label>光 Y</label><input type="range" id="gy" min="0" max="100" value="22"><output>22</output></div>
+  <div class="row"><label>光 大きさ</label><input type="range" id="gs" min="0" max="45" value="20"><output>20</output></div>
+  <p class="hint">光: 黒目などの白い反射の位置と大きさ (0で消える)。ベース色は「色」の値</p>
+  <div class="presets">
+    <button id="upOne">▲ 前へ1段</button>
+    <button id="downOne">▼ 後ろへ1段</button>
+    <button id="toFront">⏫ 最前面</button>
+    <button id="toBack">⏬ 最背面</button>
+  </div>
+  <div class="row" style="margin-top:6px"><label>レイヤー</label>
+    <select id="layerSel" style="flex:1;min-width:0;font-size:12px">
+      <option value="deco">自由 (顔より前)</option>
+      <option value="hair">髪</option>
+      <option value="back">最背面 (顔の後ろ)</option>
+    </select>
+  </div>
+  <div class="presets" style="margin-top:6px">
+    <button id="dupBtn">複製</button>
+    <button id="delBtn">削除</button>
+    <button id="vtxBtn">頂点を編集</button>
+    <button id="undoBtn">元に戻す (Ctrl+Z)</button>
+  </div>
+  <p class="hint" style="margin-top:6px">重なりは [ と ] キーでも1段ずつ動かせる。レイヤー欄で所属レイヤーを一発切替。頂点編集はpolygon図形で点を直接ドラッグ(回転0推奨)</p>
+
+  <h2>表情差分</h2>
+  <div class="presets">
+    <button data-exp="">ニュートラル</button>
+    <button data-exp="smile">にっこり</button>
+    <button data-exp="bikkuri">びっくり</button>
+    <button data-exp="jito">ジト目</button>
+    <button data-exp="angry">怒り</button>
+    <button data-exp="sad">困り</button>
+    <button data-exp="close">目閉じ</button>
+    <button data-exp="wink">ウィンク</button>
+    <button data-exp="tere">照れ</button>
+    <button data-exp="doya">ドヤ</button>
+    <button data-exp="nemui">ねむい</button>
+    <button data-exp="guru">目回し</button>
+  </div>
+  <p class="hint" style="margin-top:6px">白目・黒目・口の変形で表現。怒り/困りでは眉が出現(眉もクリックで位置調整可)。編集はニュートラル推奨</p>
+
+  <h2>フェイストラッキング</h2>
+  <div class="presets"><button id="camBtn">カメラ開始</button></div>
+  <div class="row" style="margin-top:6px"><label>状態</label><span id="camStat" style="font-size:12px;color:#8a8175">停止中</span></div>
+  <p class="hint">まばたき・視線・口の開閉・首の向きを反映、笑顔で「にっこり」。初回はモデルDLで数秒待つ。要ネット接続</p>
+
+  <h2>パーツ追加 — 素材パレット</h2>
+  <div class="toggles" style="margin-bottom:8px">
+    <label><input type="radio" name="layer" value="deco" checked>自由レイヤー</label>
+    <label><input type="radio" name="layer" value="hair">髪レイヤー</label>
+  </div>
+  <div class="presets">
+    <button data-add="maru">円</button>
+    <button data-add="daen">楕円(縦長)</button>
+    <button data-add="spike">スパイク</button>
+    <button data-add="flickl">フリック左</button>
+    <button data-add="flickr">フリック右</button>
+    <button data-add="flick2l">フリック2左(長)</button>
+    <button data-add="flick2r">フリック2右(長)</button>
+    <button data-add="flick3l">フリック3左(太)</button>
+    <button data-add="flick3r">フリック3右(太)</button>
+    <button data-add="flick4l">フリック4左(二又)</button>
+    <button data-add="flick4r">フリック4右(二又)</button>
+    <button data-add="lineh">線(横)</button>
+    <button data-add="linev">線(縦)</button>
+    <button data-add="rect">長方形</button>
+    <button data-add="rect0">四角(角なし)</button>
+    <button data-add="sq">正方形</button>
+    <button data-add="tri">三角</button>
+    <button data-add="han">半円</button>
+    <button data-add="daikei">台形</button>
+    <button data-add="kusabi">くさび(白)</button>
+    <button data-add="dot">小丸(白)</button>
+    <button data-add="kurome">黒目</button>
+    <button data-add="earl">耳(左)</button>
+    <button data-add="earr">耳(右)</button>
+  </div>
+  <p class="hint" style="margin-top:6px">向きは「角度」、色は「色」ピッカーで変更。丸み%は円・楕円・線・長方形に有効</p>
+
+  <h2>トレース用 下絵</h2>
+  <div class="row"><label>画像</label><input type="file" id="refFile" accept="image/*" style="flex:1;min-width:0;font-size:11px"></div>
+  <div class="toggles"><label><input type="checkbox" id="refShow" checked>下絵を表示</label></div>
+  <div class="row"><label>不透明度</label><input type="range" id="refOp" min="5" max="100" value="40"><output>40</output></div>
+  <div class="row"><label>大きさ</label><input type="range" id="refH" min="100" max="1200" value="830"><output>830</output></div>
+  <div class="row"><label>左右</label><input type="range" id="refX" min="-300" max="300" value="-49"><output>-49</output></div>
+  <div class="row"><label>上下</label><input type="range" id="refY" min="-300" max="400" value="10"><output>10</output></div>
+
+  <h2>編集モード</h2>
+  <div class="toggles">
+    <label><input type="checkbox" id="animStop" checked>アニメ停止(編集しやすく)</label>
+    <label><input type="checkbox" id="inkToggle" checked>キャラの縁取りを表示</label>
+  </div>
+  <div class="row" style="margin-top:6px"><label>縁取り 外</label><input type="range" data-var="--line-out" min="0" max="1000" value="400"><output>4</output></div>
+  <div class="row"><label>縁取り 内</label><input type="range" data-var="--line-in" min="0" max="1000" value="333"><output>3.33</output></div>
+  <div class="toggles" style="margin-top:6px">
+    <label><input type="checkbox" id="hideBase">ベースモデルを隠す</label>
+  </div>
+
+  <h2>配色</h2>
+  <div class="row"><label>髪</label><input type="color" data-var="--hair" value="#f5741d"></div>
+  <div class="row"><label>縁取り</label><input type="color" data-var="--line" value="#7f2f16"></div>
+  <div class="row"><label>線(口・耳)</label><input type="color" data-var="--ink" value="#241d18"></div>
+
+  <h2>表示</h2>
+  <div class="row"><label>ズーム</label><input type="range" data-var="--zoom" min="50" max="300" value="115"><output>1.15</output></div>
+  <p class="hint">キャンバス上でマウスホイールでもズームできます</p>
+  <div class="toggles">
+    <label><input type="checkbox" id="checkerToggle">透過プレビュー(市松)</label>
+  </div>
+
+  <button class="act primary" id="copyBtn">調整CSSをコピー</button>
+  <button class="act" id="resetBtn">すべてリセット</button>
+</aside>
+
+<script>
+/* 髪型エディタ: JSはスタイル値の書き込みとDOM操作のみ。描画はすべてCSS。 */
+const model = document.getElementById('model');
+const panel = document.getElementById('panel');
+const hair = document.querySelector('.hair');
+const $ = id => document.getElementById(id);
+/* ライブモード: ?live でパネル非表示・透過・縁取りON・カメラ自動起動 (配信用) */
+const QP = new URLSearchParams(location.search);
+const LIVE = QP.has('live');
+
+/* data-var付きスライダー/カラー → CSS変数 */
+document.querySelectorAll('#panel input[type=range][data-var]').forEach(el => {
+  const out = el.parentElement.querySelector('output');
+  const apply = () => {
+    const v = (el.value / 100).toFixed(2).replace(/\.?0+$/,'') || '0';
+    model.style.setProperty(el.dataset.var, v);
+    if (out) out.textContent = v;
+  };
+  el.addEventListener('input', apply); apply();
+});
+document.querySelectorAll('#panel input[type=color]').forEach(el => {
+  el.addEventListener('input', () => model.style.setProperty(el.dataset.var, el.value));
+});
+
+/* ===== 髪パーツ編集 ===== */
+let sel = null, newCount = 0, drag = null, rsz = null, rotg = null, vdrag = null, vtxOn = false;
+const ed = {x:$('hx'), y:$('hy'), w:$('hw'), h:$('hh'), r:$('hr'), b:$('hb')};
+const stage = document.getElementById('stage');
+const deco = document.getElementById('deco');
+const decoBack = document.getElementById('decoBack');
+const bodygrp = document.querySelector('.bob > .bodygrp');
+const selBox = document.createElement('div');
+selBox.style.cssText = 'position:absolute;border:2px dashed #1976d2;pointer-events:none;z-index:999;display:none;border-radius:8px;visibility:visible';
+stage.appendChild(selBox);
+
+/* 採番を既存パーツの続きから開始 (クラス名の衝突防止) */
+newCount = Math.max(0, ...[...document.querySelectorAll('#deco i, #decoBack i, .hair i')]
+  .map(el => +((el.className.match(/^[nu](\d+)$/) || [])[1] || 0)));
+
+/* ===== 元に戻す (スナップショット方式) ===== */
+const BODY_SEL = '.ear.l,.ear.r,.ear i,.eye.l,.eye.r,.mouth,.neck,.tee,.collar,.f-base';
+const undoStack = [];
+let pending = null, hcolSnap = false;
+function makeSnap(){
+  return {
+    hair: hair.innerHTML, deco: deco.innerHTML, back: decoBack.innerHTML, bodyg: bodygrp.innerHTML,
+    body: [...document.querySelectorAll(BODY_SEL)].map(el =>
+      [el.getAttribute('style') || '', el.dataset.rot === undefined ? null : el.dataset.rot])
+  };
+}
+function pushSnap(s){ undoStack.push(s || makeSnap()); if (undoStack.length > 60) undoStack.shift(); }
+function commitPending(){ if (pending) { pushSnap(pending); pending = null; } }
+function undo(){
+  const s = undoStack.pop(); if (!s) return;
+  hair.innerHTML = s.hair; deco.innerHTML = s.deco; decoBack.innerHTML = s.back;
+  if (s.bodyg !== undefined) bodygrp.innerHTML = s.bodyg;
+  [...document.querySelectorAll(BODY_SEL)].forEach((el, i) => {
+    const b = s.body[i]; if (!b) return;
+    if (b[0]) el.setAttribute('style', b[0]); else el.removeAttribute('style');
+    if (b[1] === null) delete el.dataset.rot; else el.dataset.rot = b[1];
+  });
+  select(null);
+}
+
+/* リサイズハンドル: 辺=上下左右に引き伸ばし / 角=両方向 */
+const CURSORS = {n:'ns',s:'ns',e:'ew',w:'ew',ne:'nesw',sw:'nesw',nw:'nwse',se:'nwse'};
+const HPOS = {
+  nw:'left:-5px;top:-5px', n:'left:calc(50% - 5px);top:-5px', ne:'right:-5px;top:-5px',
+  e:'right:-5px;top:calc(50% - 5px)', se:'right:-5px;bottom:-5px',
+  s:'left:calc(50% - 5px);bottom:-5px', sw:'left:-5px;bottom:-5px', w:'left:-5px;top:calc(50% - 5px)'
+};
+Object.keys(HPOS).forEach(dir => {
+  const h = document.createElement('div');
+  h.dataset.h = dir;
+  h.style.cssText = `position:absolute;width:10px;height:10px;background:#1976d2;border-radius:2px;pointer-events:auto;cursor:${CURSORS[dir]}-resize;${HPOS[dir]}`;
+  selBox.appendChild(h);
+});
+/* 回転ハンドル: 枠の上に出る丸。ドラッグで回転、Shiftで15°スナップ */
+const rotStem = document.createElement('div');
+rotStem.style.cssText = 'position:absolute;left:calc(50% - 1px);top:-16px;width:2px;height:14px;background:#1976d2;pointer-events:none';
+selBox.appendChild(rotStem);
+const rotH = document.createElement('div');
+rotH.dataset.h = 'rot';
+rotH.style.cssText = 'position:absolute;left:calc(50% - 7px);top:-30px;width:14px;height:14px;background:#fff;border:3px solid #1976d2;border-radius:50%;pointer-events:auto;cursor:grab';
+selBox.appendChild(rotH);
+selBox.addEventListener('pointerdown', e => {
+  const d = e.target.dataset.h;
+  if (!d || !sel) return;
+  pending = makeSnap();
+  if (d === 'rot') {
+    const r = sel.getBoundingClientRect();
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    rotg = {cx, cy, a0: Math.atan2(e.clientY - cy, e.clientX - cx) * 180 / Math.PI, r0: +sel.dataset.rot || 0};
+  } else {
+    const p = sel.parentElement;
+    const sc = p.getBoundingClientRect().width / p.offsetWidth;
+    rsz = {d, x0:e.clientX, y0:e.clientY, l:sel.offsetLeft, t:sel.offsetTop, w:sel.offsetWidth, h:sel.offsetHeight, sc};
+  }
+  e.stopPropagation(); e.preventDefault();
+});
+
+function rotOf(el, cs){
+  if (el.dataset.rot !== undefined) return +el.dataset.rot;
+  const m = new DOMMatrixReadOnly(cs.transform === 'none' ? '' : cs.transform);
+  return Math.round(Math.atan2(m.b, m.a) * 180 / Math.PI);
+}
+function matStyles(el){ /* クラス由来の値をインラインへ固定化 */
+  const cs = getComputedStyle(el);
+  if (cs.display === 'none') return; /* 非表示パーツ(表情用の眉など)は0に潰さない */
+  el.dataset.rot = rotOf(el, cs);
+  const L = el.offsetLeft, T = el.offsetTop, W = el.offsetWidth, H = el.offsetHeight;
+  el.style.left = L + 'px'; el.style.top = T + 'px';
+  el.style.width = W + 'px'; el.style.height = H + 'px';
+  el.style.marginLeft = '0'; el.style.right = 'auto'; el.style.bottom = 'auto';
+  if (!el.style.borderRadius) el.style.borderRadius = cs.borderRadius;
+  if (!el.style.clipPath && cs.clipPath !== 'none') el.style.clipPath = cs.clipPath;
+}
+function updBox(){
+  if (!sel) { selBox.style.display = 'none'; renderVtx(); return; }
+  const r = sel.getBoundingClientRect(), s = stage.getBoundingClientRect();
+  selBox.style.display = 'block';
+  selBox.style.left = (r.left - s.left - 4) + 'px';
+  selBox.style.top = (r.top - s.top - 4) + 'px';
+  selBox.style.width = (r.width + 4) + 'px';
+  selBox.style.height = (r.height + 4) + 'px';
+  renderVtx();
+}
+
+/* ===== 頂点編集 (polygon図形の点を直接ドラッグ) ===== */
+const vtxLayer = document.createElement('div');
+vtxLayer.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:1001';
+stage.appendChild(vtxLayer);
+function parsePoly(el){
+  if (!el || !el.style.clipPath) return null;
+  const m = el.style.clipPath.match(/polygon\(([^)]+)\)/);
+  if (!m) return null;
+  return m[1].split(',').map(pt => pt.trim().split(/\s+/).map(parseFloat));
+}
+function writePoly(el, pts){
+  el.style.clipPath = 'polygon(' + pts.map(q => q[0].toFixed(1) + '% ' + q[1].toFixed(1) + '%').join(',') + ')';
+}
+function renderVtx(){
+  vtxLayer.innerHTML = '';
+  if (!vtxOn || !sel) return;
+  const pts = parsePoly(sel);
+  if (!pts) return;
+  const r = sel.getBoundingClientRect(), s = stage.getBoundingClientRect();
+  pts.forEach((p, idx) => {
+    const d = document.createElement('div');
+    d.dataset.i = idx;
+    d.style.cssText = `position:absolute;width:11px;height:11px;margin:-6px;border-radius:50%;background:#e91e63;border:2px solid #fff;pointer-events:auto;cursor:crosshair;left:${r.left - s.left + p[0]/100*r.width}px;top:${r.top - s.top + p[1]/100*r.height}px`;
+    vtxLayer.appendChild(d);
+  });
+}
+vtxLayer.addEventListener('pointerdown', e => {
+  const i = e.target.dataset.i;
+  if (i === undefined || !sel) return;
+  pending = makeSnap();
+  vdrag = {i:+i, pts:parsePoly(sel), r:sel.getBoundingClientRect()};
+  e.stopPropagation(); e.preventDefault();
+});
+$('vtxBtn').addEventListener('click', () => {
+  if (!sel || !parsePoly(sel)) return;
+  vtxOn = !vtxOn;
+  $('vtxBtn').textContent = vtxOn ? '頂点編集を終了' : '頂点を編集';
+  renderVtx();
+});
+function setSlider(input, v){
+  input.value = v;
+  input.parentElement.querySelector('output').textContent = Math.round(v);
+}
+function select(el){
+  if (el !== sel) { vtxOn = false; $('vtxBtn').textContent = '頂点を編集'; }
+  sel = el;
+  if (!el) { $('selName').textContent = 'なし'; updBox(); return; }
+  matStyles(el);
+  $('selName').textContent = el.className || '(新規)';
+  setSlider(ed.x, el.offsetLeft); setSlider(ed.y, el.offsetTop);
+  setSlider(ed.w, el.offsetWidth); setSlider(ed.h, el.offsetHeight);
+  setSlider(ed.r, +el.dataset.rot || 0);
+  const br = parseFloat(el.style.borderRadius);
+  setSlider(ed.b, isNaN(br) ? 50 : Math.min(br, 50));
+  const bgc = getComputedStyle(el).backgroundColor;
+  if (bgc && bgc !== 'rgba(0, 0, 0, 0)') {
+    const rgb = bgc.match(/\d+/g);
+    if (rgb) $('hcol').value = '#' + rgb.slice(0,3).map(n => (+n).toString(16).padStart(2,'0')).join('');
+  }
+  const ls = $('layerSel');
+  ls.disabled = ![hair, deco, decoBack].includes(el.parentElement);
+  if (!ls.disabled) ls.value = el.parentElement === hair ? 'hair' : el.parentElement === decoBack ? 'back' : 'deco';
+  updBox();
+}
+function applyEd(){
+  if (!sel) return;
+  commitPending();
+  sel.style.left = ed.x.value + 'px';
+  sel.style.top = ed.y.value + 'px';
+  sel.style.width = ed.w.value + 'px';
+  sel.style.height = ed.h.value + 'px';
+  sel.dataset.rot = ed.r.value;
+  sel.style.transform = +ed.r.value ? `rotate(${ed.r.value}deg)` : '';
+  if (!sel.style.clipPath) sel.style.borderRadius = ed.b.value + '%';
+  Object.values(ed).forEach(i => i.parentElement.querySelector('output').textContent = i.value);
+  updBox();
+}
+Object.values(ed).forEach(i => {
+  i.addEventListener('pointerdown', () => { if (sel) pending = makeSnap(); });
+  i.addEventListener('input', applyEd);
+});
+
+/* クリック選択 + ドラッグ移動 (髪レイヤー・自由レイヤー・ベースモデル全パーツ) */
+function startDrag(el, e){
+  select(el);
+  pending = makeSnap();
+  const p = el.parentElement, sc = p.getBoundingClientRect().width / p.offsetWidth;
+  drag = {x0:e.clientX, y0:e.clientY, l:el.offsetLeft, t:el.offsetTop, sc};
+  e.preventDefault();
+}
+[hair, deco, decoBack, bodygrp].forEach(c => c.addEventListener('pointerdown', e => {
+  if (e.target === c) return;
+  startDrag(e.target, e);
+}));
+document.querySelectorAll('.ear.l,.ear.r,.eye.l,.eye.r,.mouth,.neck,.tee,.collar,.f-base')
+  .forEach(el => el.addEventListener('pointerdown', e => { startDrag(el, e); e.stopPropagation(); }));
+/* 耳の内側の線も個別に選択・編集可能 (耳本体より優先) */
+document.querySelectorAll('.ear i')
+  .forEach(el => el.addEventListener('pointerdown', e => { startDrag(el, e); e.stopPropagation(); }));
+addEventListener('pointermove', e => {
+  if (vdrag && sel) {
+    commitPending();
+    const p = vdrag.pts[vdrag.i];
+    p[0] = Math.min(130, Math.max(-30, (e.clientX - vdrag.r.left) / vdrag.r.width * 100));
+    p[1] = Math.min(130, Math.max(-30, (e.clientY - vdrag.r.top) / vdrag.r.height * 100));
+    writePoly(sel, vdrag.pts);
+    renderVtx(); return;
+  }
+  if (rotg && sel) {
+    commitPending();
+    const a = Math.atan2(e.clientY - rotg.cy, e.clientX - rotg.cx) * 180 / Math.PI;
+    let rot = Math.round(rotg.r0 + a - rotg.a0);
+    if (e.shiftKey) rot = Math.round(rot / 15) * 15;
+    rot = ((rot + 540) % 360) - 180;
+    sel.dataset.rot = rot;
+    sel.style.transform = rot ? `rotate(${rot}deg)` : '';
+    setSlider(ed.r, rot); updBox(); return;
+  }
+  if (rsz && sel) {
+    commitPending();
+    const dx = (e.clientX - rsz.x0) / rsz.sc, dy = (e.clientY - rsz.y0) / rsz.sc;
+    let {l, t, w, h} = rsz;
+    if (rsz.d.includes('e')) w = rsz.w + dx;
+    if (rsz.d.includes('s')) h = rsz.h + dy;
+    if (rsz.d.includes('w')) { w = rsz.w - dx; l = rsz.l + dx; }
+    if (rsz.d.includes('n')) { h = rsz.h - dy; t = rsz.t + dy; }
+    w = Math.max(6, w); h = Math.max(6, h);
+    sel.style.left = l + 'px'; sel.style.top = t + 'px';
+    sel.style.width = w + 'px'; sel.style.height = h + 'px';
+    setSlider(ed.x, l); setSlider(ed.y, t); setSlider(ed.w, w); setSlider(ed.h, h);
+    updBox(); return;
+  }
+  if (!drag || !sel) return;
+  commitPending();
+  sel.style.left = drag.l + (e.clientX - drag.x0) / drag.sc + 'px';
+  sel.style.top = drag.t + (e.clientY - drag.y0) / drag.sc + 'px';
+  setSlider(ed.x, sel.offsetLeft); setSlider(ed.y, sel.offsetTop);
+  updBox();
+});
+addEventListener('pointerup', () => { drag = null; rsz = null; rotg = null; vdrag = null; pending = null; });
+
+/* 素材パレット: 設計図の図形ボキャブラリー (polygon%座標なのでサイズ変更に追従) */
+const SHAPES = {
+  maru:  {w:44, h:44, css:'border-radius:50%'},
+  daen:  {w:34, h:54, css:'border-radius:50%'},
+  spike: {w:26, h:42, css:'clip-path:polygon(55% 0%,62% 12%,68% 26%,73% 40%,77% 53%,78% 64%,75% 76%,68% 88%,57% 96%,45% 100%,33% 96%,25% 87%,21% 75%,22% 62%,26% 49%,33% 35%,41% 21%,48% 10%)'},
+  flickl:{w:22, h:38, css:'clip-path:polygon(30% 0%,21% 12%,17% 26%,19% 40%,25% 55%,35% 70%,48% 83%,62% 93%,72% 100%,67% 86%,59% 74%,52% 61%,47% 48%,44% 34%,40% 20%,36% 9%)'},
+  flickr:{w:22, h:38, css:'clip-path:polygon(70% 0%,79% 12%,83% 26%,81% 40%,75% 55%,65% 70%,52% 83%,38% 93%,28% 100%,33% 86%,41% 74%,48% 61%,53% 48%,56% 34%,60% 20%,64% 9%)'},
+  kusabi:{w:38, h:16, css:'clip-path:polygon(0% 60%,14% 42%,30% 28%,48% 18%,66% 12%,82% 12%,93% 20%,98% 34%,96% 50%,88% 64%,74% 74%,58% 78%,40% 76%,22% 72%,8% 68%);background:#fff'},
+  dot:   {w:16, h:16, css:'border-radius:50%;background:#fff'},
+  lineh: {w:70, h:5,  css:'border-radius:3px;background:#241d18'},
+  linev: {w:5,  h:70, css:'border-radius:3px;background:#241d18'},
+  rect:  {w:70, h:36, css:'border-radius:6px;background:#241d18'},
+  rect0: {w:70, h:44, css:'border-radius:0'},
+  sq:    {w:44, h:44, css:'border-radius:0'},
+  tri:   {w:44, h:40, css:'clip-path:polygon(50% 0%,100% 100%,0% 100%);background:#241d18'},
+  han:   {w:56, h:30, css:'border-radius:50% 50% 0 0 / 100% 100% 0 0;background:#241d18'},
+  daikei:{w:60, h:34, css:'clip-path:polygon(22% 0%,78% 0%,100% 100%,0% 100%);background:#241d18'},
+  kurome:{w:20, h:30, css:'border-radius:50%;background:radial-gradient(ellipse 13% 9% at 66% 22%,#fff 98%,#241d18 100%)'},
+  flick2l:{w:26, h:44, css:'clip-path:polygon(40% 0%,28% 6%,18% 16%,12% 28%,11% 42%,15% 56%,23% 70%,35% 82%,50% 92%,66% 98%,78% 100%,70% 90%,60% 80%,51% 69%,44% 57%,39% 44%,37% 30%,38% 16%)'},
+  flick2r:{w:26, h:44, css:'clip-path:polygon(60% 0%,72% 6%,82% 16%,88% 28%,89% 42%,85% 56%,77% 70%,65% 82%,50% 92%,34% 98%,22% 100%,30% 90%,40% 80%,49% 69%,56% 57%,61% 44%,63% 30%,62% 16%)'},
+  flick3l:{w:30, h:34, css:'clip-path:polygon(30% 0%,16% 8%,7% 22%,4% 38%,8% 56%,18% 72%,34% 86%,54% 96%,74% 100%,64% 84%,56% 68%,50% 52%,46% 36%,42% 20%,37% 8%)'},
+  flick3r:{w:30, h:34, css:'clip-path:polygon(70% 0%,84% 8%,93% 22%,96% 38%,92% 56%,82% 72%,66% 86%,46% 96%,26% 100%,36% 84%,44% 68%,50% 52%,54% 36%,58% 20%,63% 8%)'},
+  flick4l:{w:30, h:42, css:'clip-path:polygon(42% 0%,30% 8%,22% 20%,20% 32%,26% 40%,16% 44%,8% 54%,6% 66%,12% 78%,24% 88%,40% 96%,58% 100%,72% 98%,62% 88%,54% 76%,50% 64%,50% 52%,54% 42%,50% 30%,47% 16%)'},
+  flick4r:{w:30, h:42, css:'clip-path:polygon(58% 0%,70% 8%,78% 20%,80% 32%,74% 40%,84% 44%,92% 54%,94% 66%,88% 78%,76% 88%,60% 96%,42% 100%,28% 98%,38% 88%,46% 76%,50% 64%,50% 52%,46% 42%,50% 30%,53% 16%)'},
+  earl:  {w:44, h:58, css:'background:#f8dcb8;clip-path:polygon(6% 6%,24% 10%,42% 18%,58% 28%,72% 41%,82% 55%,87% 68%,86% 80%,79% 90%,67% 97%,52% 99%,38% 96%,26% 89%,17% 79%,10% 66%,5% 52%,3% 37%,3% 21%)'},
+  earr:  {w:44, h:58, css:'background:#f8dcb8;clip-path:polygon(94% 6%,76% 10%,58% 18%,42% 28%,28% 41%,18% 55%,13% 68%,14% 80%,21% 90%,33% 97%,48% 99%,62% 96%,74% 89%,83% 79%,90% 66%,95% 52%,97% 37%,97% 21%)'},
+};
+document.querySelectorAll('[data-add]').forEach(b => b.addEventListener('click', () => {
+  pushSnap();
+  const t = SHAPES[b.dataset.add];
+  const tgt = document.querySelector('input[name=layer]:checked').value === 'hair' ? hair : deco;
+  const el = document.createElement('i');
+  el.className = 'n' + (++newCount);
+  const pos = tgt === hair ? 'left:-20px;top:-25px' : 'left:10px;top:10px';
+  el.style.cssText = `${pos};width:${t.w}px;height:${t.h}px;${t.css}`;
+  tgt.appendChild(el); select(el);
+}));
+$('hcol').addEventListener('input', e => {
+  if (!sel) return;
+  if (!hcolSnap) { pushSnap(); hcolSnap = true; }
+  sel.style.background = e.target.value;
+});
+$('hcol').addEventListener('change', () => hcolSnap = false);
+
+/* 光の反射 (radial-gradient) の位置・大きさ調整 */
+function applyGrad(){
+  if (!sel) return;
+  commitPending();
+  const gx = +$('gx').value, gy = +$('gy').value, gs = +$('gs').value;
+  ['gx','gy','gs'].forEach(id => $(id).parentElement.querySelector('output').textContent = $(id).value);
+  const base = $('hcol').value;
+  sel.style.background = gs <= 0 ? base :
+    `radial-gradient(ellipse ${gs}% ${Math.round(gs*0.72)}% at ${gx}% ${gy}%,#fff 98%,${base} 100%)`;
+}
+['gx','gy','gs'].forEach(id => {
+  $(id).addEventListener('pointerdown', () => { if (sel) pending = makeSnap(); });
+  $(id).addEventListener('input', applyGrad);
+});
+$('dupBtn').addEventListener('click', () => {
+  if (!sel) return;
+  pushSnap();
+  const c = sel.cloneNode(false); c.className = 'n' + (++newCount);
+  c.style.left = (sel.offsetLeft + 14) + 'px';
+  sel.parentElement.appendChild(c); select(c);
+});
+$('delBtn').addEventListener('click', () => { if (sel) { pushSnap(); sel.remove(); select(null); } });
+$('undoBtn').addEventListener('click', undo);
+
+/* 重なり順: 1段ずつ / 最前面・最背面 / レイヤー切替 */
+function stepOrder(dir){
+  if (!sel) return;
+  pushSnap();
+  if (dir > 0) { const nx = sel.nextElementSibling; if (nx) sel.parentElement.insertBefore(nx, sel); }
+  else { const pv = sel.previousElementSibling; if (pv) sel.parentElement.insertBefore(sel, pv); }
+  updBox();
+}
+$('upOne').addEventListener('click', () => stepOrder(1));
+$('downOne').addEventListener('click', () => stepOrder(-1));
+$('toFront').addEventListener('click', () => { if (sel) { pushSnap(); sel.parentElement.appendChild(sel); updBox(); } });
+$('toBack').addEventListener('click', () => { if (sel) { pushSnap(); sel.parentElement.prepend(sel); updBox(); } });
+$('layerSel').addEventListener('change', e => {
+  if (!sel || ![hair, deco, decoBack].includes(sel.parentElement)) return;
+  const tgt = {deco, hair, back: decoBack}[e.target.value];
+  if (tgt && tgt !== sel.parentElement) { pushSnap(); tgt.appendChild(sel); updBox(); }
+});
+
+/* 表情差分の切替 */
+const EXPS = ['exp-smile','exp-bikkuri','exp-jito','exp-angry','exp-sad','exp-close',
+              'exp-wink','exp-tere','exp-doya','exp-nemui','exp-guru','exp-heart','exp-star'];
+document.querySelectorAll('[data-exp]').forEach(b => b.addEventListener('click', () => {
+  EXPS.forEach(c => model.classList.remove(c));
+  if (b.dataset.exp) model.classList.add('exp-' + b.dataset.exp);
+}));
+
+/* postMessageブリッジ: 親フレーム(controller.html等)からの状態注入の受信口。
+   受け付けるのは exp-* クラス切替 / CSS変数書き込み / アイドルアニメclassのON-OFF /
+   カメラ開始・停止のみ (「JSは変数注入とクラス切替だけ」の絶対原則を維持)。
+     {type:'exp',  name:'smile'|''}
+     {type:'var',  key:'--zoom', value:0.9}
+     {type:'vars', vars:{'--yaw':0.3, '--pitch':-0.1}}   … 一括版
+     {type:'anim', name:'auto-blink', on:true}
+     {type:'cam',  on:true} */
+const ANIMS = ['auto-blink','auto-gaze','idle-bob','idle-breathe','hair-sway',
+               'hair-follow','arm-swing','body-sway','mode-groove'];
+const POSES = ['raise-l','raise-r','wave','think','front'];
+const EMOS = ['heart','anger','sweat','ex','q','zzz'];
+const ITEMS = ['cup','light'];
+function setVarSafe(key, value){
+  if (typeof key === 'string' && key.startsWith('--')) model.style.setProperty(key, String(value));
+}
+window.addEventListener('message', e => {
+  const m = e.data;
+  if (!m || typeof m !== 'object') return;
+  if (m.type === 'exp') {
+    EXPS.forEach(c => model.classList.remove(c));
+    if (m.name && EXPS.includes('exp-' + m.name)) model.classList.add('exp-' + m.name);
+  } else if (m.type === 'var') {
+    setVarSafe(m.key, m.value);
+  } else if (m.type === 'vars' && m.vars && typeof m.vars === 'object') {
+    Object.keys(m.vars).forEach(k => setVarSafe(k, m.vars[k]));
+  } else if (m.type === 'anim' && ANIMS.includes(m.name)) {
+    model.classList.toggle(m.name, !!m.on);
+  } else if (m.type === 'pose' && POSES.includes(m.name)) {
+    model.classList.toggle('pose-' + m.name, !!m.on);
+  } else if (m.type === 'emo') {
+    /* ワンショット再生: 同じエモート連打でも再発火するようreflowを挟む */
+    EMOS.forEach(x => model.classList.remove('emo-' + x));
+    if (m.name && EMOS.includes(m.name)) { void model.offsetWidth; model.classList.add('emo-' + m.name); }
+  } else if (m.type === 'item' && ITEMS.includes(m.name)) {
+    model.classList.toggle('item-' + m.name, !!m.on);
+  } else if (m.type === 'cfg' && m.key === 'recenter') {
+    NEUP.n = 0;   /* いまの姿勢を正面として再学習 */
+  } else if (m.type === 'cfg' && Object.prototype.hasOwnProperty.call(CFG, m.key)) {
+    CFG[m.key] = m.value;
+    if (m.key === 'pose') { if (!m.value) clearPoses(); else loadPose(); }
+  } else if (m.type === 'track') {
+    /* 別モデル(controller内)のトラッキング結果をまとめて反映 (別窓ビューア用) */
+    if (m.vars && typeof m.vars === 'object') Object.keys(m.vars).forEach(k => setVarSafe(k, m.vars[k]));
+    if (Array.isArray(m.poses)) POSES.forEach(p => model.classList.toggle('pose-' + p, m.poses.includes(p)));
+    if (typeof m.smile === 'boolean') model.classList.toggle('exp-smile', m.smile);
+  } else if (m.type === 'cam') {
+    if (m.on && !cam) startCam();
+    else if (!m.on && cam) stopCam();
+  }
+});
+if (window.parent !== window) {
+  try { window.parent.postMessage({type: 'vtuber-ready'}, '*'); } catch (_) {}
+}
+
+/* ドロップダウンからのパーツ選択 (重なって掴めないパーツ用) */
+$('pickSel').addEventListener('change', e => {
+  if (!e.target.value) return;
+  const el = document.querySelector(e.target.value);
+  if (el) select(el);
+  e.target.value = '';
+});
+
+/* 矢印キーで微調整: 1px / Shift+矢印で10px */
+let lastArrow = 0;
+function nudge(dx, dy){
+  if (!sel) return;
+  const now = Date.now();
+  if (now - lastArrow > 800) pushSnap();
+  lastArrow = now;
+  sel.style.left = (sel.offsetLeft + dx) + 'px';
+  sel.style.top = (sel.offsetTop + dy) + 'px';
+  setSlider(ed.x, sel.offsetLeft); setSlider(ed.y, sel.offsetTop);
+  updBox();
+}
+
+/* アニメ停止 (編集モード) */
+$('animStop').addEventListener('change', e => model.classList.toggle('editing', e.target.checked));
+/* エディタモードのみアニメ停止。?live / ?obs (=表示用途) ではアイドルアニメを動かす */
+if (!LIVE && !QP.has('obs')) model.classList.add('editing');
+else $('animStop').checked = false;
+
+/* 縁取り表示切替 (デフォルトON) */
+$('inkToggle').addEventListener('change', e => model.classList.toggle('no-ink', !e.target.checked));
+
+/* ベースモデルの表示切替 (トレース集中用) */
+$('hideBase').addEventListener('change', e => model.classList.toggle('hide-base', e.target.checked));
+
+/* トレース用下絵: 画像を選ぶとモデルの背面に表示 */
+const refImg = $('refImg');
+$('refFile').addEventListener('change', e => {
+  const f = e.target.files[0];
+  if (!f) return;
+  const r = new FileReader();
+  r.onload = () => {
+    refImg.src = r.result;
+    refImg.style.display = $('refShow').checked ? 'block' : 'none';
+  };
+  r.readAsDataURL(f);
+});
+$('refShow').addEventListener('change', e => {
+  refImg.style.display = (e.target.checked && refImg.src) ? 'block' : 'none';
+});
+[['refOp','--ro', v => v/100], ['refH','--rh', v => v+'px'],
+ ['refX','--rx', v => v+'px'], ['refY','--ry', v => v+'px']].forEach(([id, vr, f]) => {
+  const el = $(id), out = el.parentElement.querySelector('output');
+  el.addEventListener('input', () => {
+    refImg.style.setProperty(vr, f(el.value));
+    if (out) out.textContent = el.value;
+  });
+});
+
+/* 調整CSSの書き出し: 髪+自由レイヤー+動かしたベースパーツをそのまま貼れるCSSに */
+document.getElementById('copyBtn').addEventListener('click', async e => {
+  const bodyParts = [...document.querySelectorAll(BODY_SEL)]
+    .filter(el => el.dataset.rot !== undefined); /* 触ったものだけ */
+  const items = [...hair.children].map(el => ['.hair .', el])
+    .concat([...decoBack.children].map(el => ['#decoBack .', el]))
+    .concat([...deco.querySelectorAll(':scope > i, :scope > .eyegrp > i')].map(el => ['#deco .', el]))
+    .concat([...bodygrp.children].map(el => ['.bodygrp .', el]))
+    .concat(bodyParts.map(el => ['@body', el]));
+  const lines = items.map(([pre, el], i) => {
+    const cs = getComputedStyle(el);
+    let name;
+    if (pre === '@body') {
+      if (el.classList.contains('f-base')) name = '.facegrp .f-base';
+      else if (el.parentElement.classList.contains('ear'))
+        name = '.ear.' + (el.parentElement.classList.contains('l') ? 'l' : 'r') + ' .' + el.className;
+      else name = '.' + el.className.trim().split(/\s+/).join('.');
+    } else {
+      name = pre + ((el.className || 'p' + i).split(' ')[0]);
+    }
+    const rot = rotOf(el, cs);
+    const tf = rot ? `;transform:rotate(${rot}deg)` : '';
+    const bg = el.style.background ? `;background:${el.style.background}`
+             : (cs.backgroundColor === 'rgb(255, 255, 255)' ? ';background:#fff' : '');
+    const br = el.style.borderRadius || cs.borderRadius;
+    const cp = el.style.clipPath ? `;clip-path:${el.style.clipPath}` : '';
+    return `${name}{left:${el.offsetLeft}px;top:${el.offsetTop}px;width:${el.offsetWidth}px;height:${el.offsetHeight}px;border-radius:${br}${tf}${bg}${cp}}`;
+  });
+  const text = lines.join('\n');
+  try { await navigator.clipboard.writeText(text); } catch {
+    const ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); ta.remove();
+  }
+  e.target.textContent = 'コピーしました!';
+  setTimeout(() => e.target.textContent = '調整CSSをコピー', 1200);
+});
+
+/* ホイールズーム */
+stage.addEventListener('wheel', e => {
+  e.preventDefault();
+  const z = document.querySelector('input[data-var="--zoom"]');
+  z.value = Math.min(300, Math.max(50, +z.value + (e.deltaY < 0 ? 10 : -10)));
+  z.dispatchEvent(new Event('input'));
+}, {passive:false});
+
+/* ===== M2: フェイストラッキング =====
+   MediaPipe Face Landmarker のブレンドシェイプと頭部行列を
+   CSS変数(--yaw/--pitch/--roll/--eye-open/--pupil-x/--pupil-y/--mouth-open)と
+   exp-* クラスに書き込むだけ。描画ロジックはすべてCSS側。 */
+const camBtn = $('camBtn'), camStat = $('camStat');
+let cam = null;
+const TS = {yaw:0, pitch:0, roll:0, eol:1, eor:1, mo:0, mw:0, px:0, py:0};
+/* トラッキング設定 (controllerから {type:'cfg'} で変更できる) */
+const CFG = {eyeGain: 1.4, smooth: .15, pose: true};
+/* 目の開きの自動キャリブレーション: 各目の「普段の開き」を追いかけて正規化する。
+   本人の目が細くても、普段の状態=全開(1.0)として扱われる */
+const NEU = {l: .5, r: .5};
+/* 首の正面キャリブレーション: 起動直後の約30フレームの平均姿勢を「正面」とする。
+   カメラが顔の正面に無くてもモデルはまっすぐ立つ。cfg 'recenter' で再取得 */
+const NEUP = {n: 0, yaw: 0, pitch: 0, roll: 0};
+/* 応答カーブ: 小さな揺れは控えめ、大きく振るとしっかり動く */
+const curve = v => { v = clamp1(v); return clamp1(v * (.85 + .45 * Math.abs(v))); };
+const lerp = (a, b, t) => a + (b - a) * t;
+const clamp1 = v => Math.max(-1, Math.min(1, v));
+/* 適応平滑化: 動きが小さいときは強く滑らかに(プルプル抑制)、
+   大きく動いたときは追従を速く(もっさり防止) */
+const step = (cur, t) => cur + (t - cur) * Math.min(.65, CFG.smooth + Math.abs(t - cur) * 2.2);
+function clearPoses(){ POSES.forEach(p => model.classList.remove('pose-' + p)); }
+/* ポーズ検出モデルの読み込み (手上げ/バイバイ/考える用)。失敗しても顔トラッキングは続行 */
+async function loadPose(){
+  if (!cam || cam.poseLm || !cam.env) return;
+  try {
+    cam.poseLm = await cam.env.vis.PoseLandmarker.createFromOptions(cam.env.files, {
+      baseOptions: {
+        modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',
+        delegate: 'GPU'
+      },
+      runningMode: 'VIDEO', numPoses: 1
+    });
+  } catch (_) { cam.poseLm = null; }
+}
+function bs(cats, name){
+  const c = cats.find(x => x.categoryName === name);
+  return c ? c.score : 0;
+}
+/* カメラ取得: 既定カメラが開けない場合(他アプリ使用中/停止中の仮想カメラが既定 等)は
+   全ビデオ入力を順に試す */
+async function grabCam(){
+  try {
+    return await navigator.mediaDevices.getUserMedia({video: {width: {ideal: 640}, height: {ideal: 480}}});
+  } catch (e0) {
+    let devs = [];
+    try { devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput'); } catch (_) {}
+    for (const d of devs) {
+      try { return await navigator.mediaDevices.getUserMedia({video: {deviceId: {exact: d.deviceId}}}); }
+      catch (_) {}
+    }
+    throw e0;
+  }
+}
+const CAM_ERR = {
+  NotReadableError: 'カメラを開けません。他のアプリ(Zoom/OBS/Teams等)が使用中か、既定が停止中の仮想カメラです',
+  NotAllowedError: 'カメラがブロックされています。ブラウザのサイト設定とWindowsのプライバシー設定を確認してください',
+  NotFoundError: 'カメラが見つかりません',
+  OverconstrainedError: 'カメラが要求解像度に対応していません'
+};
+async function startCam(){
+  camBtn.disabled = true;
+  camStat.textContent = '読み込み中…(初回はモデルDLで数秒)';
+  try {
+    const vis = await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs');
+    const files = await vis.FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm');
+    const lm = await vis.FaceLandmarker.createFromOptions(files, {
+      baseOptions: {
+        modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',
+        delegate: 'GPU'
+      },
+      runningMode: 'VIDEO', numFaces: 1,
+      outputFaceBlendshapes: true, outputFacialTransformationMatrixes: true
+    });
+    const stream = await grabCam();
+    const video = document.getElementById('camVid');
+    video.srcObject = stream;
+    await video.play();
+    NEU.l = NEU.r = .5;
+    NEUP.n = 0;
+    cam = {lm, poseLm: null, env: {vis, files}, video, stream,
+           raf: 0, last: -1, frame: 0, wristX: [], waveT: 0};
+    if (CFG.pose) await loadPose();
+    camStat.textContent = 'トラッキング中';
+    camBtn.textContent = 'カメラ停止';
+    camLoop();
+    reportCam();
+  } catch (err) {
+    const msg = CAM_ERR[err.name] || err.message;
+    camStat.textContent = 'エラー: ' + msg;
+    reportCam(msg);
+    if (LIVE) {
+      const d = document.createElement('div');
+      d.textContent = 'カメラエラー: ' + msg;
+      d.style.cssText = 'position:fixed;top:8px;left:8px;color:#c00;font-size:14px;background:rgba(255,255,255,.85);padding:4px 10px;border-radius:6px;z-index:9999';
+      document.body.appendChild(d);
+    }
+    cam = null;
+  }
+  camBtn.disabled = false;
+}
+function camLoop(){
+  if (!cam) return;
+  cam.raf = requestAnimationFrame(camLoop);
+  if (cam.video.currentTime === cam.last) return;
+  cam.last = cam.video.currentTime;
+  const res = cam.lm.detectForVideo(cam.video, performance.now());
+  if (!res.faceBlendshapes || !res.faceBlendshapes.length) return;
+  const b = res.faceBlendshapes[0].categories;
+  const jaw = bs(b,'jawOpen');
+  const smile = (bs(b,'mouthSmileLeft') + bs(b,'mouthSmileRight')) / 2;
+  const gx = (bs(b,'eyeLookInLeft') + bs(b,'eyeLookOutRight'))
+           - (bs(b,'eyeLookOutLeft') + bs(b,'eyeLookInRight'));
+  const gy = (bs(b,'eyeLookDownLeft') + bs(b,'eyeLookDownRight'))
+           - (bs(b,'eyeLookUpLeft') + bs(b,'eyeLookUpRight'));
+  let yaw = 0, pitch = 0, roll = 0;
+  if (res.facialTransformationMatrixes && res.facialTransformationMatrixes.length) {
+    const m = res.facialTransformationMatrixes[0].data;
+    yaw = Math.atan2(m[8], m[10]) * 180 / Math.PI;
+    pitch = Math.asin(Math.max(-1, Math.min(1, m[9]))) * 180 / Math.PI;
+    roll = Math.atan2(m[1], m[0]) * 180 / Math.PI;
+  }
+  /* 鏡のように動くミラー写像 + 正面補正 + 応答カーブ + 適応平滑化 */
+  const ry = clamp1(-yaw / 25), rp = clamp1(-pitch / 25), rr = clamp1(roll / 30);
+  if (NEUP.n < 30) {   /* 起動/リセット直後は平均を取って正面を学習 */
+    NEUP.yaw += (ry - NEUP.yaw) / (NEUP.n + 1);
+    NEUP.pitch += (rp - NEUP.pitch) / (NEUP.n + 1);
+    NEUP.roll += (rr - NEUP.roll) / (NEUP.n + 1);
+    NEUP.n++;
+  }
+  TS.yaw = step(TS.yaw, curve(ry - NEUP.yaw));
+  TS.pitch = step(TS.pitch, curve(rp - NEUP.pitch));
+  TS.roll = step(TS.roll, curve(rr - NEUP.roll));
+  TS.px = step(TS.px, clamp1(-gx * 1.5));
+  TS.py = step(TS.py, clamp1(gy * 1.5));
+  /* 左右別まばたき (ミラー: モデル左目=本人の右目) + 自動キャリブレーション */
+  const rawL = 1 - Math.min(1, bs(b,'eyeBlinkRight') * CFG.eyeGain);
+  const rawR = 1 - Math.min(1, bs(b,'eyeBlinkLeft') * CFG.eyeGain);
+  NEU.l = Math.max(.2, rawL > NEU.l ? lerp(NEU.l, rawL, .3) : lerp(NEU.l, rawL, .004));
+  NEU.r = Math.max(.2, rawR > NEU.r ? lerp(NEU.r, rawR, .3) : lerp(NEU.r, rawR, .004));
+  TS.eol = lerp(TS.eol, Math.min(1, rawL / NEU.l), .6);
+  TS.eor = lerp(TS.eor, Math.min(1, rawR / NEU.r), .6);
+  /* 口: 縦=jawOpen、横=にやり(+)/すぼめ(-) */
+  TS.mo = lerp(TS.mo, Math.min(1, jaw * 1.6), .5);
+  TS.mw = lerp(TS.mw, Math.max(-.45, Math.min(.9, smile * .9 - bs(b,'mouthPucker') * .6)), .4);
+  const vars = {
+    '--yaw': TS.yaw.toFixed(3), '--pitch': TS.pitch.toFixed(3), '--roll': TS.roll.toFixed(3),
+    '--eye-open-l': TS.eol.toFixed(3), '--eye-open-r': TS.eor.toFixed(3),
+    '--eye-open': Math.min(TS.eol, TS.eor).toFixed(3),
+    '--mouth-open': TS.mo.toFixed(3), '--mouth-w': TS.mw.toFixed(3),
+    '--pupil-x': TS.px.toFixed(3), '--pupil-y': TS.py.toFixed(3)
+  };
+  const st = model.style;
+  Object.keys(vars).forEach(k => st.setProperty(k, vars[k]));
+  model.classList.toggle('exp-smile', smile > .6);
+  try { poseLoop(); } catch (_) {}
+  /* 別窓ビューア連携: トラッキング結果を親(controller)へ送り、中継してもらう */
+  if (window.parent !== window) {
+    try {
+      window.parent.postMessage({
+        type: 'track', vars,
+        poses: POSES.filter(p => model.classList.contains('pose-' + p)),
+        smile: smile > .6
+      }, '*');
+    } catch (_) {}
+  }
+}
+
+/* ===== ポーズ検出: 手首と肩の位置関係から手上げ/バイバイ/考えるを判定 =====
+   映像は非ミラーなので index16(本人の右手)=画面左=モデルの左腕 */
+function poseLoop(){
+  if (!cam || !cam.poseLm || !CFG.pose) return;
+  cam.frame++;
+  if (cam.frame % 3) return;                      /* 3フレームに1回で十分 (負荷対策) */
+  const pr = cam.poseLm.detectForVideo(cam.video, performance.now());
+  const lm = pr.landmarks && pr.landmarks[0];
+  if (!lm) return;
+  const nose = lm[0], shL = lm[12], shR = lm[11], wrL = lm[16], wrR = lm[15];
+  const vis = p => p && (p.visibility === undefined || p.visibility > .5);
+  /* 手上げ: 手首が肩より上 (ヒステリシスでチラつき防止) */
+  const raise = (cls, wr, sh) => {
+    const on = model.classList.contains(cls);
+    if (!vis(wr) || !vis(sh)) { model.classList.remove(cls); return; }
+    if (!on && wr.y < sh.y - .06) model.classList.add(cls);
+    else if (on && wr.y > sh.y + .02) model.classList.remove(cls);
+  };
+  raise('pose-raise-l', wrL, shL);
+  raise('pose-raise-r', wrR, shR);
+  /* バイバイ: 上げている手首の左右往復(0.9秒内に2回以上折り返し) */
+  const raisedWr = model.classList.contains('pose-raise-l') ? wrL
+                 : model.classList.contains('pose-raise-r') ? wrR : null;
+  const now = performance.now();
+  if (raisedWr) {
+    const h = cam.wristX;
+    h.push({x: raisedWr.x, t: now});
+    while (h.length && now - h[0].t > 900) h.shift();
+    let flips = 0, dir = 0;
+    for (let i = 1; i < h.length; i++) {
+      const d = h[i].x - h[i-1].x;
+      if (Math.abs(d) < .004) continue;
+      const s = Math.sign(d);
+      if (dir && s !== dir) flips++;
+      dir = s;
+    }
+    if (flips >= 2) cam.waveT = now;
+  } else cam.wristX.length = 0;
+  model.classList.toggle('pose-wave', now - cam.waveT < 700);
+  /* 考える: どちらかの手があご付近 (上げていないとき限定) */
+  const nearChin = w => vis(w) && w.y > nose.y &&
+    Math.hypot(w.x - nose.x, w.y - nose.y) < .17;
+  model.classList.toggle('pose-think',
+    !model.classList.contains('pose-raise-l') && !model.classList.contains('pose-raise-r')
+    && (nearChin(wrL) || nearChin(wrR)));
+}
+function stopCam(){
+  if (!cam) return;
+  cancelAnimationFrame(cam.raf);
+  cam.stream.getTracks().forEach(tr => tr.stop());
+  cam = null;
+  camBtn.textContent = 'カメラ開始';
+  camStat.textContent = '停止中';
+  ['--yaw','--pitch','--roll','--pupil-x','--pupil-y','--mouth-open','--mouth-w']
+    .forEach(v => model.style.setProperty(v, 0));
+  model.style.setProperty('--eye-open', 1);
+  model.style.removeProperty('--eye-open-l');
+  model.style.removeProperty('--eye-open-r');
+  model.classList.remove('exp-smile');
+  clearPoses();
+  reportCam();
+}
+/* カメラの成否を親フレーム(controller)へ通知 */
+function reportCam(error){
+  if (window.parent === window) return;
+  try { window.parent.postMessage({type:'cam-state', on: !!cam, error: error || ''}, '*'); } catch (_) {}
+}
+camBtn.addEventListener('click', () => cam ? stopCam() : startCam());
+
+/* リセット・市松・パネル切替・OBSモード */
+document.getElementById('resetBtn').addEventListener('click', () => location.reload());
+document.getElementById('checkerToggle').addEventListener('change', e => {
+  document.body.classList.toggle('checker', e.target.checked);
+});
+addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); return; }
+  if (e.target.matches('input,select')) return;
+  if (e.key === ']') { stepOrder(1); return; }
+  if (e.key === '[') { stepOrder(-1); return; }
+  const st = e.shiftKey ? 10 : 1;
+  if (e.key === 'ArrowLeft')  { e.preventDefault(); nudge(-st, 0); return; }
+  if (e.key === 'ArrowRight') { e.preventDefault(); nudge(st, 0); return; }
+  if (e.key === 'ArrowUp')    { e.preventDefault(); nudge(0, -st); return; }
+  if (e.key === 'ArrowDown')  { e.preventDefault(); nudge(0, st); return; }
+  if (e.key.toLowerCase() === 'h') panel.classList.toggle('hidden');
+});
+if (QP.has('obs') || LIVE) document.body.classList.add('obs');
+if (QP.has('zoom')) model.style.setProperty('--zoom', QP.get('zoom'));
+if (LIVE) setTimeout(startCam, 400);
+</script>
+</body>
+</html>
