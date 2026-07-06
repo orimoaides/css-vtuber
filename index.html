@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CSS VTuber Studio</title>
+<link rel="stylesheet" href="css/app.css">
+<link rel="stylesheet" href="css/avatar.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">◖◗</span>
+    <h1>CSS VTuber <em>Studio</em></h1>
+    <span class="tag">画像ゼロ・CSSだけで動くアバター</span>
+  </div>
+  <div class="topbar-actions">
+    <select id="modelPicker" class="model-picker" aria-label="モデル選択"></select>
+    <button id="galleryBtn" class="btn btn-gallery">🖼 ギャラリー</button>
+    <button id="trackBtn" class="btn btn-track">● フェイストラッキング</button>
+    <button id="shareBtn" class="btn btn-share">🔗 共有リンク</button>
+    <button id="exportBtn" class="btn btn-export">⤓ HTML出力</button>
+    <button id="helpBtn" class="btn-help" title="使い方">?</button>
+  </div>
+</header>
+
+<main class="layout">
+  <section class="stage-wrap">
+    <div class="stage" id="stage">
+      <div class="stage-grid"></div>
+      <div class="avatar-mount" id="avatarMount"></div>
+      <video id="camFeed" playsinline muted></video>
+      <canvas id="camOverlay"></canvas>
+    </div>
+    <div class="expr-bar" id="exprBar">
+      <span class="expr-label">表情</span>
+      <button data-expr="neutral" class="expr-btn">😐 通常</button>
+      <button data-expr="smile" class="expr-btn">😊 笑顔</button>
+      <button data-expr="surprised" class="expr-btn">😮 驚き</button>
+      <button data-expr="angry" class="expr-btn">😠 怒り</button>
+      <button data-expr="sad" class="expr-btn">🥺 悲しい</button>
+      <button data-expr="sleepy" class="expr-btn">😴 眠い</button>
+      <button data-expr="wink" class="expr-btn">😉 ウインク</button>
+      <button data-expr="happy" class="expr-btn">😄 にっこり</button>
+      <button data-expr="smug" class="expr-btn">😏 じと目</button>
+      <span class="expr-sep"></span>
+      <button id="talkBtn" class="expr-btn">🗣 喋るテスト</button>
+      <span class="expr-sep"></span>
+      <label class="chk"><input type="checkbox" id="togglePuppet"> マウス操作</label>
+    </div>
+    <div class="stage-bar">
+      <div class="stage-status" id="stageStatus">アイドル中</div>
+      <div class="stage-controls">
+        <button id="calibBtn" class="btn-mini calib-btn" hidden>🎯 キャリブレーション</button>
+        <label class="chk"><input type="checkbox" id="toggleIdle" checked> アイドルモーション</label>
+        <label class="chk"><input type="checkbox" id="toggleGrid" checked> グリッド</label>
+        <label class="chk"><input type="checkbox" id="toggleMirror" checked> ミラー</label>
+        <select id="bgScene" class="bg-scene" title="背景シーン">
+          <option value="solid">背景: 単色</option>
+          <option value="studio">スタジオ</option>
+          <option value="night">夜空</option>
+          <option value="stars">星空</option>
+          <option value="sunset">夕焼け</option>
+          <option value="chroma">クロマキー緑(OBS)</option>
+          <option value="transparent">透明(OBS)</option>
+        </select>
+        <input type="color" id="bgColor" value="#10141f" title="背景色">
+      </div>
+    </div>
+  </section>
+
+  <aside class="panel" id="panel">
+    <div class="panel-head">
+      <h2>コントロールパネル</h2>
+      <div class="panel-actions">
+        <button id="saveBtn" class="btn-mini">💾 保存</button>
+        <button id="randomBtn" class="btn-mini">🎲 ランダム</button>
+        <button id="resetBtn" class="btn-mini">↺ リセット</button>
+      </div>
+    </div>
+    <div class="panel-body" id="panelBody"></div>
+  </aside>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<div class="modal" id="helpModal" hidden>
+  <div class="modal-backdrop" data-close-help></div>
+  <div class="modal-card help-card">
+    <div class="modal-head">
+      <h2>CSS VTuber Studio へようこそ 🎭</h2>
+      <button class="modal-x" data-close-help>✕</button>
+    </div>
+    <div class="help-body">
+      <p><b>画像を一切使わず、CSSだけ</b>で動くVTuberアバターを作れます。</p>
+      <ol>
+        <li><b>モデルを選ぶ</b> — 上のドロップダウンで 人間 / クマ / クロード / ネコ / ロボット / キツネ / パンダ / スライム / おばけ / うさぎ / ドラゴン（全11種）。</li>
+        <li><b>微調整</b> — 右の<b>コントロールパネル</b>で目・髪・口・色・髪型・アクセサリ・テーマ配色を調整。🎲でランダム、💾で保存。</li>
+        <li><b>動かす</b> — <b>● フェイストラッキング</b>でカメラ連動（初回は許可＆🎯キャリブレーション）。カメラ無しでも「マウス操作」でOK。</li>
+        <li><b>配信</b> — 背景を「透明(OBS)」や「クロマキー緑」に → <b>⤓ HTML出力</b> で単体ファイルを保存し、OBSのブラウザソースに追加。</li>
+      </ol>
+      <p class="help-keys"><b>ショートカット:</b> <kbd>1</kbd>–<kbd>7</kbd> モデル / <kbd>R</kbd> ランダム / <kbd>G</kbd> ギャラリー / <kbd>E</kbd> 出力 / <kbd>Space</kbd> まばたき</p>
+      <button id="helpStart" class="btn btn-export help-start">はじめる</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="galleryModal" hidden>
+  <div class="modal-backdrop" data-close></div>
+  <div class="modal-card">
+    <div class="modal-head">
+      <h2>プリセットギャラリー</h2>
+      <div class="modal-head-actions">
+        <button id="jsonExportBtn" class="btn-mini">⬇ JSON書出</button>
+        <button id="jsonImportBtn" class="btn-mini">⬆ JSON読込</button>
+        <button class="modal-x" data-close>✕</button>
+      </div>
+    </div>
+    <input type="file" id="jsonFile" accept="application/json,.json" hidden>
+    <div class="gallery-grid" id="galleryGrid"></div>
+  </div>
+</div>
+
+<script src="js/models.js"></script>
+<script src="js/presets.js"></script>
+<script src="js/avatar.js"></script>
+<script src="js/panel.js"></script>
+<script src="js/tracking.js"></script>
+<script src="js/export.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

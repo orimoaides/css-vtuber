@@ -1,0 +1,2990 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CSS VTuber Studio</title>
+<style>
+/* ============================================================
+   Studio UI (the editor chrome around the avatar)
+   ============================================================ */
+:root{
+  color-scheme: dark;
+  --bg: #0c0f17;
+  --panel: #151a27;
+  --panel-2: #1c2333;
+  --line: #2a3346;
+  --text: #e7ecf6;
+  --muted: #93a0bd;
+  --accent: #7c8cff;
+  --accent-2: #d05a78;
+  --radius: 14px;
+}
+*{ box-sizing: border-box; }
+html,body{ margin:0; height:100%; }
+body{
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
+  display: flex; flex-direction: column; height: 100vh; overflow: hidden;
+}
+
+/* ---- top bar ---- */
+.topbar{
+  display:flex; align-items:center; justify-content:space-between;
+  padding: 12px 20px; border-bottom:1px solid var(--line);
+  background: linear-gradient(180deg, #11151f, #0c0f17);
+}
+.brand{ display:flex; align-items:center; gap:12px; }
+.logo{ font-size:22px; color:var(--accent); letter-spacing:-3px; }
+.brand h1{ font-size:18px; margin:0; font-weight:700; }
+.brand h1 em{ color:var(--accent); font-style:normal; }
+.brand .tag{ color:var(--muted); font-size:12px; margin-left:6px; }
+.topbar-actions{ display:flex; gap:10px; align-items:center; }
+
+.model-picker{
+  background:var(--panel-2); color:var(--text); border:1px solid var(--line);
+  border-radius:10px; padding:9px 12px; font-size:13px; cursor:pointer;
+}
+.btn{
+  border:0; border-radius:10px; padding:10px 16px; cursor:pointer;
+  font-size:13px; font-weight:600; color:#fff; transition:transform .08s, filter .15s;
+}
+.btn:active{ transform: translateY(1px); }
+.btn-track{ background:var(--accent-2); }
+.btn-track.on{ background:#2f9e6b; box-shadow:0 0 0 3px rgba(47,158,107,.25); }
+.btn-export{ background:var(--accent); }
+.btn-share{ background:#3a4a7a; }
+.btn:hover{ filter:brightness(1.08); }
+
+/* expression bar */
+.expr-bar{
+  display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+  padding:9px 16px; background:var(--panel); border-top:1px solid var(--line);
+}
+.expr-label{ color:var(--muted); font-size:12px; margin-right:2px; }
+.expr-btn{
+  background:var(--panel-2); border:1px solid var(--line); color:var(--text);
+  border-radius:999px; padding:6px 12px; font-size:12px; cursor:pointer;
+  transition:border-color .15s, transform .08s;
+}
+.expr-btn:hover{ border-color:var(--accent); }
+.expr-btn:active{ transform:translateY(1px); }
+.expr-sep{ width:1px; height:18px; background:var(--line); margin:0 4px; }
+
+/* ---- layout ---- */
+.layout{ flex:1; display:grid; grid-template-columns: 1fr 340px; min-height:0; }
+
+/* ---- stage ---- */
+.stage-wrap{ display:flex; flex-direction:column; min-width:0; }
+.stage{
+  flex:1; position:relative; overflow:hidden;
+  background: var(--stage-bg, #10141f);
+  display:grid; place-items:center;
+}
+.stage-grid{
+  position:absolute; inset:0; pointer-events:none; opacity:.5;
+  background-image:
+    linear-gradient(rgba(255,255,255,.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.05) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+.stage.no-grid .stage-grid{ display:none; }
+.avatar-mount{ position:relative; z-index:2; }
+
+/* transparent-bg preview: checkerboard so the user knows it's see-through */
+.stage.bg-checker{
+  background:
+    repeating-conic-gradient(#3a3f4c 0% 25%, #2c313c 0% 50%) 0 / 28px 28px;
+}
+.stage.bg-checker .stage-grid{ display:none; }
+
+#camFeed{
+  position:absolute; right:14px; bottom:14px; width:180px; border-radius:10px;
+  border:1px solid var(--line); display:none; z-index:5; transform: scaleX(-1);
+  box-shadow:0 8px 20px rgba(0,0,0,.4);
+}
+.stage.tracking #camFeed{ display:block; }
+.stage.tracking.no-mirror #camFeed{ transform:none; }
+#camOverlay{ display:none; }
+
+.stage-bar{
+  display:flex; align-items:center; justify-content:space-between;
+  padding:8px 16px; border-top:1px solid var(--line); background:var(--panel);
+  font-size:12px;
+}
+.stage-status{ color:var(--muted); }
+.stage-controls{ display:flex; align-items:center; gap:14px; }
+.chk{ display:flex; align-items:center; gap:6px; color:var(--muted); cursor:pointer; }
+#bgColor{ width:26px; height:26px; border:1px solid var(--line); border-radius:6px; background:none; cursor:pointer; }
+.bg-scene{
+  background:var(--panel-2); color:var(--text); border:1px solid var(--line);
+  border-radius:8px; padding:5px 8px; font-size:12px; cursor:pointer;
+}
+.calib-btn{ background:#2f9e6b !important; color:#fff; border:0 !important; }
+
+/* ---- panel ---- */
+.panel{
+  background:var(--panel); border-left:1px solid var(--line);
+  display:flex; flex-direction:column; min-height:0;
+}
+.panel-head{
+  display:flex; align-items:center; justify-content:space-between;
+  padding:14px 16px; border-bottom:1px solid var(--line);
+}
+.panel-head h2{ font-size:14px; margin:0; }
+.panel-actions{ display:flex; gap:8px; }
+.btn-mini{
+  background:var(--panel-2); border:1px solid var(--line); color:var(--text);
+  border-radius:8px; padding:6px 10px; font-size:12px; cursor:pointer;
+}
+.btn-mini:hover{ border-color:var(--accent); }
+.panel-body{ overflow-y:auto; padding:6px 14px 30px; }
+
+.pgroup{ margin-top:14px; }
+.pgroup-title{
+  font-size:12px; color:var(--muted); margin:0 0 8px; text-transform:none;
+  display:flex; align-items:center; gap:8px; letter-spacing:.04em;
+}
+.pgroup-title span{ color:var(--accent); }
+.pgroup-body{ display:flex; flex-direction:column; gap:10px;
+  background:var(--panel-2); border:1px solid var(--line); border-radius:12px; padding:12px; }
+.pctl{ display:flex; flex-direction:column; gap:5px; }
+.pctl label{ font-size:12px; color:var(--text); display:flex; justify-content:space-between; }
+.pctl output{ color:var(--muted); font-variant-numeric:tabular-nums; }
+.pctl input[type=range]{
+  width:100%; -webkit-appearance:none; height:5px; border-radius:5px;
+  background:linear-gradient(90deg, var(--accent), #4a5680); outline:none;
+}
+.pctl input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none; width:15px; height:15px; border-radius:50%;
+  background:#fff; cursor:pointer; box-shadow:0 1px 4px rgba(0,0,0,.4);
+}
+.theme-row{ display:flex; flex-wrap:wrap; gap:8px; }
+.theme-sw{
+  flex:1 1 0; min-width:48px; height:40px; border:1px solid var(--line); border-radius:9px;
+  cursor:pointer; position:relative; overflow:hidden; transition:transform .08s;
+}
+.theme-sw span{
+  position:absolute; inset:0; display:grid; place-items:center;
+  font-size:12px; color:#fff; text-shadow:0 1px 3px rgba(0,0,0,.6); font-weight:600;
+}
+.theme-sw:hover{ transform:translateY(-2px); border-color:#fff; }
+.theme-sw:active{ transform:translateY(0); }
+.pselect{
+  width:100%; background:var(--bg); color:var(--text); border:1px solid var(--line);
+  border-radius:8px; padding:7px 9px; font-size:13px; cursor:pointer;
+}
+.pctl-toggle{ flex-direction:row; }
+.tgl{ display:flex; align-items:center; gap:9px; cursor:pointer; font-size:13px; width:100%; }
+.tgl input{ width:16px; height:16px; accent-color:var(--accent); cursor:pointer; }
+.pctl input[type=color]{
+  width:100%; height:30px; border:1px solid var(--line); border-radius:8px;
+  background:none; cursor:pointer; padding:2px;
+}
+
+/* ---- toast ---- */
+.toast{
+  position:fixed; left:50%; bottom:26px; transform:translateX(-50%) translateY(20px);
+  background:#222a3d; color:#fff; padding:10px 18px; border-radius:10px;
+  border:1px solid var(--line); font-size:13px; opacity:0; pointer-events:none;
+  transition:.25s; z-index:50;
+}
+.toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+
+/* ---- gallery button + modal ---- */
+.btn-gallery{ background:#5a4a8a; }
+.btn-help{
+  width:36px; border:1px solid var(--line); background:var(--panel-2); color:var(--text);
+  border-radius:10px; font-size:15px; font-weight:700; cursor:pointer;
+}
+.btn-help:hover{ border-color:var(--accent); }
+.help-card{ width:min(560px, 92vw); }
+.help-body{ padding:18px 22px; line-height:1.7; font-size:14px; color:var(--text); }
+.help-body p{ margin:0 0 12px; }
+.help-body ol{ margin:0 0 14px; padding-left:20px; }
+.help-body li{ margin:7px 0; }
+.help-body b{ color:#fff; }
+.help-keys{ background:var(--panel-2); border:1px solid var(--line); border-radius:10px; padding:10px 12px; font-size:13px; color:var(--muted); }
+.help-body kbd{
+  background:var(--bg); border:1px solid var(--line); border-bottom-width:2px;
+  border-radius:5px; padding:1px 6px; font-size:12px; color:var(--text); font-family:inherit;
+}
+.help-start{ display:block; width:100%; margin-top:6px; padding:11px; }
+.modal{ position:fixed; inset:0; z-index:60; display:grid; place-items:center; }
+.modal[hidden]{ display:none; }
+.modal-backdrop{ position:absolute; inset:0; background:rgba(6,8,14,.66); backdrop-filter:blur(3px); }
+.modal-card{
+  position:relative; width:min(760px, 92vw); max-height:84vh; overflow:auto;
+  background:var(--panel); border:1px solid var(--line); border-radius:16px;
+  box-shadow:0 30px 70px rgba(0,0,0,.5);
+}
+.modal-head{
+  position:sticky; top:0; display:flex; align-items:center; justify-content:space-between;
+  padding:16px 20px; border-bottom:1px solid var(--line); background:var(--panel);
+}
+.modal-head h2{ font-size:16px; margin:0; }
+.modal-head-actions{ display:flex; align-items:center; gap:8px; }
+.modal-x{ background:var(--panel-2); border:1px solid var(--line); color:var(--text);
+  border-radius:8px; width:30px; height:30px; cursor:pointer; }
+.gallery-grid{
+  display:grid; grid-template-columns:repeat(auto-fill, minmax(148px, 1fr));
+  gap:14px; padding:18px;
+}
+.gallery-card{
+  background:var(--panel-2); border:1px solid var(--line); border-radius:12px;
+  padding:8px; cursor:pointer; transition:border-color .15s, transform .08s;
+  display:flex; flex-direction:column; align-items:center; gap:6px;
+}
+.gallery-card:hover{ border-color:var(--accent); transform:translateY(-2px); }
+.gallery-prev{
+  position:relative; width:100%; aspect-ratio:1/1; overflow:hidden; border-radius:9px;
+  background:radial-gradient(120% 90% at 50% 18%, #2a2f48, #0a0c14);
+}
+.gallery-prev .avatar{
+  position:absolute; left:50%; bottom:-6%;
+  transform:translateX(-50%) scale(.34) !important;
+  transform-origin:bottom center; filter:none;
+}
+.gallery-name{ font-size:11px; color:var(--text); text-align:center; }
+.gallery-section{
+  grid-column:1/-1; font-size:12px; color:var(--muted); font-weight:600;
+  padding:4px 2px; border-bottom:1px solid var(--line); margin-top:4px;
+}
+.gallery-card{ position:relative; }
+.gallery-del{
+  position:absolute; top:5px; right:5px; width:20px; height:20px; border-radius:50%;
+  background:rgba(10,12,20,.7); color:#fff; font-size:11px; line-height:20px;
+  text-align:center; opacity:0; transition:opacity .15s;
+}
+.gallery-card:hover .gallery-del{ opacity:1; }
+.gallery-del:hover{ background:var(--accent-2); }
+
+@media (max-width: 880px){
+  .layout{ grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
+  .panel{ border-left:0; border-top:1px solid var(--line); max-height:42vh; }
+}
+
+/* ---- mobile ---- */
+@media (max-width: 640px){
+  .topbar{ flex-wrap:wrap; gap:10px; padding:10px 12px; }
+  .brand{ width:100%; gap:8px; }
+  .brand h1{ font-size:16px; }
+  .brand .tag{ display:none; }
+  .topbar-actions{ width:100%; flex-wrap:wrap; gap:8px; }
+  .model-picker{ flex:1 1 100%; order:-1; }
+  .topbar-actions .btn{ flex:1 1 auto; padding:9px 10px; font-size:12px; text-align:center; }
+  .stage-bar{ flex-wrap:wrap; gap:8px; }
+  .stage-controls{ flex-wrap:wrap; gap:10px; row-gap:6px; }
+  .panel{ max-height:46vh; }
+  #camFeed{ width:120px; }
+  .expr-bar{ gap:6px; padding:8px 12px; }
+  .expr-btn{ padding:6px 9px; font-size:11px; }
+}
+
+</style>
+<style data-avatar-css>
+/* ============================================================
+   CSS VTuber — parametric avatar
+   Every part is drawn with pure CSS (no images) and driven by
+   custom properties. Two namespaces:
+     --s-*  style   (set by the control panel)
+     --p-*  pose    (set by tracking + idle animation, -1..1)
+   ============================================================ */
+
+.avatar {
+  /* ---- defaults (a model overrides the --s-* set) ---- */
+  --s-scale: 1;
+  --s-head-w: 230px;
+  --s-head-h: 250px;
+  --s-head-round: 46% 46% 44% 44% / 52% 52% 48% 48%;
+  --s-skin: #ffe3d3;
+  --s-skin-sh: #f3b9a4;
+  --s-skin-line: #e69e88;
+
+  --s-eye-w: 62px;
+  --s-eye-h: 70px;
+  --s-eye-gap: 36px;
+  --s-eye-y: 18px;
+  --s-eye-tilt: 0deg;
+  --s-iris: #6a5acd;
+  --s-iris2: #b8a9ff;
+  --s-eye-white: #ffffff;
+  --s-lash: #2b2233;
+
+  --s-brow-y: 0px;
+  --s-brow-thick: 9px;
+  --s-brow-w: 46px;
+  --s-brow-color: #6b4a3a;
+  --s-brow-angle: -4deg;
+
+  --s-nose-op: 0.35;
+
+  --s-mouth-w: 40px;
+  --s-mouth-y: 70px;
+  --s-mouth-color: #c4566a;
+  --s-mouth-in: #7d2638;
+
+  --s-blush: #ff9aa6;
+  --s-blush-op: 0.55;
+
+  --s-hair: #5b6da8;
+  --s-hair2: #46568a;
+  --s-hair-shine: #97a6dd;
+
+  --s-acc: #ff6f91;
+
+  /* ---- pose defaults ---- */
+  --p-yaw: 0;
+  --p-pitch: 0;
+  --p-roll: 0;
+  --p-blink: 0;
+  --p-blink-l: 0;
+  --p-blink-r: 0;
+  --p-mouth: 0;
+  --p-mouth-wide: 0;
+  --p-brow: 0;
+  --p-eye-x: 0;
+  --p-eye-y: 0;
+  --p-breath: 0;
+
+  position: relative;
+  width: calc(var(--s-head-w) * 1.7);
+  height: calc(var(--s-head-h) * 2.0);
+  transform: scale(var(--s-scale));
+  transform-origin: center bottom;
+  perspective: 900px;
+  filter: drop-shadow(0 24px 40px rgba(0,0,0,.35));
+}
+
+/* ---------- sparkles FX (optional, toggled by .fx-sparkle) ---------- */
+.av-sparkles { position: absolute; inset: -6%; z-index: 10; pointer-events: none; display: none; }
+.avatar.fx-sparkle .av-sparkles { display: block; }
+.av-sparkles i {
+  position: absolute;
+  left: var(--sx); top: var(--sy);
+  width: calc(16px * var(--ss, 1)); height: calc(16px * var(--ss, 1));
+  background: var(--s-acc);
+  clip-path: polygon(50% 0, 60% 40%, 100% 50%, 60% 60%, 50% 100%, 40% 60%, 0 50%, 40% 40%);
+  opacity: 0;
+  animation: sparkle-tw 2.6s ease-in-out infinite;
+  animation-delay: var(--sd, 0s);
+  filter: drop-shadow(0 0 4px var(--s-acc));
+}
+@keyframes sparkle-tw {
+  0%, 100% { opacity: 0; transform: scale(.4) rotate(0deg); }
+  50%      { opacity: .9; transform: scale(1) rotate(25deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .av-sparkles i { animation: none; opacity: .7; }
+}
+
+/* ---------- body / breathing ---------- */
+.av-body {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%) translateY(calc(var(--p-breath) * -4px));
+  transform-style: preserve-3d;
+}
+
+/* ---------- head: receives head rotation ---------- */
+.av-head {
+  position: relative;
+  width: var(--s-head-w);
+  height: var(--s-head-h);
+  transform-style: preserve-3d;
+  transform:
+    rotateY(calc(var(--p-yaw) * 24deg))
+    rotateX(calc(var(--p-pitch) * -17deg))
+    rotateZ(calc(var(--p-roll) * 14deg));
+  transition: transform .04s linear;
+  will-change: transform;
+}
+
+.av-face-base {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(120% 90% at 50% 14%, #fff6f0 0%, var(--s-skin) 42%, var(--s-skin-sh) 100%);
+  border-radius: var(--s-head-round);
+  box-shadow:
+    inset -16px -20px 34px rgba(0,0,0,.06),
+    inset 14px 10px 26px rgba(255,255,255,.45);
+}
+
+/* soft jaw/chin shading */
+.av-face-base::after {
+  content: "";
+  position: absolute;
+  left: 18%;
+  right: 18%;
+  bottom: 4%;
+  height: 30%;
+  background: radial-gradient(80% 100% at 50% 100%, var(--s-skin-sh) 0%, transparent 70%);
+  opacity: .5;
+  border-radius: 50%;
+}
+
+/* ---------- ears (human) ---------- */
+.av-ear {
+  position: absolute;
+  top: 44%;
+  width: 34px;
+  height: 50px;
+  background: radial-gradient(60% 60% at 60% 40%, var(--s-skin) 0%, var(--s-skin-sh) 100%);
+  border-radius: 50% 50% 40% 40%;
+  z-index: 1;
+}
+.av-ear.left { left: -16px; transform: rotate(-12deg); }
+.av-ear.right { right: -16px; transform: rotate(12deg); }
+
+/* ---------- face slots layer ---------- */
+.av-face {
+  position: absolute;
+  inset: 0;
+  transform: translateZ(8px);
+}
+
+/* smooth glide ONLY while an expression preset is applied (.expr-anim);
+   live tracking/idle stay snappy because the class is removed right after */
+.avatar.expr-anim .av-head { transition: transform .28s ease; }
+.avatar.expr-anim .av-mouth { transition: height .28s ease, width .28s ease; }
+.avatar.expr-anim .av-brow { transition: top .28s ease, transform .28s ease; }
+.avatar.expr-anim .av-lid { transition: height .2s ease; }
+.avatar.expr-anim .av-iris { transition: transform .28s ease; }
+
+/* ---------- eyebrows ---------- */
+.av-brow {
+  position: absolute;
+  top: calc(31% + var(--s-brow-y) - var(--p-brow) * 12px);
+  width: var(--s-brow-w);
+  height: var(--s-brow-thick);
+  background: var(--s-brow-color);
+  border-radius: 6px;
+  z-index: 4;
+}
+.av-brow.left {
+  left: calc(50% - var(--s-eye-gap) - var(--s-eye-w) - 4px);
+  transform: rotate(calc(var(--s-brow-angle) + var(--p-brow) * -6deg));
+}
+.av-brow.right {
+  right: calc(50% - var(--s-eye-gap) - var(--s-eye-w) - 4px);
+  transform: rotate(calc(var(--s-brow-angle) * -1 + var(--p-brow) * 6deg));
+}
+
+/* ---------- eyes ---------- */
+.av-eye {
+  position: absolute;
+  top: calc(38% + var(--s-eye-y));
+  width: var(--s-eye-w);
+  height: var(--s-eye-h);
+  z-index: 3;
+}
+.av-eye.left { left: calc(50% - var(--s-eye-gap) - var(--s-eye-w)); transform: rotate(calc(var(--s-eye-tilt) * -1)); }
+.av-eye.right { right: calc(50% - var(--s-eye-gap) - var(--s-eye-w)); transform: rotate(var(--s-eye-tilt)); }
+
+.av-eye-white {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(80% 70% at 50% 30%, #fff 0%, var(--s-eye-white) 60%, #e7eef6 100%);
+  border-radius: 50% 50% 48% 48% / 55% 55% 45% 45%;
+  overflow: hidden;
+  box-shadow: inset 0 6px 8px rgba(40,30,60,.18);
+}
+
+/* iris tracks gaze */
+.av-iris {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 76%;
+  height: 76%;
+  border-radius: 50%;
+  /* brighter centre, mid iris colour, then a dark limbal ring at the rim */
+  background:
+    radial-gradient(closest-side at 50% 36%,
+      var(--s-iris2) 0%,
+      var(--s-iris) 46%,
+      color-mix(in srgb, var(--s-iris) 62%, #000) 80%,
+      #1a1430 100%);
+  transform: translate(
+    calc(-50% + var(--p-eye-x) * 9px),
+    calc(-50% + var(--p-eye-y) * 7px));
+  box-shadow: inset 0 -4px 6px rgba(0,0,0,.35);
+}
+/* faint inner glow ring just inside the limbal ring */
+.av-iris::after {
+  content: "";
+  position: absolute;
+  inset: 12%;
+  border-radius: 50%;
+  box-shadow: inset 0 0 6px 1px color-mix(in srgb, var(--s-iris2) 60%, transparent);
+  pointer-events: none;
+}
+.av-pupil {
+  position: absolute;
+  left: 50%; top: 50%;
+  width: 42%; height: 42%;
+  background: #1a1330;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+.av-hl {
+  position: absolute;
+  width: 30%; height: 30%;
+  background: #fff;
+  border-radius: 50%;
+  top: 12%; left: 18%;
+  opacity: .95;
+}
+.av-hl.small {
+  width: 14%; height: 14%;
+  top: 52%; left: 56%;
+  opacity: .7;
+}
+
+/* upper lid for blinking — skin-colored shutter coming down */
+.av-lid {
+  position: absolute;
+  left: -8%;
+  width: 116%;
+  top: 0;
+  height: calc(var(--blink-amt, 0) * 108%);
+  background: linear-gradient(var(--s-skin) 70%, var(--s-skin-sh));
+  border-radius: 0 0 46% 46% / 0 0 70% 70%;
+  z-index: 5;
+  box-shadow: 0 2px 3px rgba(0,0,0,.15);
+}
+.av-eye.left  { --blink-amt: max(var(--p-blink), var(--p-blink-l)); }
+.av-eye.right { --blink-amt: max(var(--p-blink), var(--p-blink-r)); }
+
+/* aegyo-sal (涙袋) — a soft under-eye highlight for cuteness.
+   Disabled on the stylised dot/LED-eye models where it looks off. */
+.av-eye::after {
+  content: "";
+  position: absolute;
+  left: 8%; bottom: -9px;
+  width: 84%; height: 9px;
+  background: radial-gradient(closest-side, rgba(255,255,255,.65), transparent 75%);
+  border-radius: 50%;
+  pointer-events: none;
+}
+.model-robot .av-eye::after,
+.model-claude .av-eye::after,
+.model-slime .av-eye::after { display: none; }
+
+/* upper lash line */
+.av-lash {
+  position: absolute;
+  top: -3px; left: -6%;
+  width: 112%;
+  height: 12px;
+  background: var(--s-lash);
+  border-radius: 50% 50% 0 0 / 100% 100% 0 0;
+  z-index: 6;
+}
+
+/* ---------- nose ---------- */
+.av-nose {
+  position: absolute;
+  top: 56%; left: 50%;
+  width: 10px; height: 12px;
+  transform: translateX(-50%);
+  background: var(--s-skin-line);
+  opacity: var(--s-nose-op);
+  border-radius: 50%;
+  z-index: 2;
+}
+
+/* ---------- mouth ---------- */
+.av-mouth {
+  position: absolute;
+  top: calc(50% + var(--s-mouth-y));
+  left: 50%;
+  width: calc(var(--s-mouth-w) + var(--p-mouth-wide) * 18px);
+  height: calc(7px + var(--p-mouth) * 34px);
+  transform: translateX(-50%);
+  background: var(--s-mouth-color);
+  border-radius: 40% 40% 50% 50% / 30% 30% 80% 80%;
+  overflow: hidden;
+  z-index: 3;
+  transition: height .05s linear, width .05s linear;
+}
+.av-mouth-inner {
+  position: absolute;
+  inset: 18% 14% 0 14%;
+  background: var(--s-mouth-in);
+  border-radius: 0 0 50% 50%;
+}
+.av-mouth-inner::after { /* tongue hint */
+  content: "";
+  position: absolute;
+  left: 22%; right: 22%; bottom: 0; height: 45%;
+  background: #ee8898;
+  border-radius: 50% 50% 40% 40%;
+  opacity: calc(var(--p-mouth));
+}
+
+/* ---------- blush ---------- */
+.av-blush {
+  position: absolute;
+  top: 54%;
+  width: 40px; height: 22px;
+  background: radial-gradient(closest-side, var(--s-blush) 0%, transparent 75%);
+  opacity: var(--s-blush-op);
+  border-radius: 50%;
+  z-index: 2;
+}
+.av-blush.left { left: 8%; }
+.av-blush.right { right: 8%; }
+
+/* ---------- hair ---------- */
+.av-hair-back {
+  position: absolute;
+  left: 50%; top: -6%;
+  width: calc(var(--s-head-w) * 1.16);
+  height: calc(var(--s-head-h) * 1.18);
+  /* sits behind the face in a parallel plane and rotates WITH the
+     head (it's a child of .av-head), so no cross-plane clipping */
+  transform: translateX(-50%) translateZ(-30px);
+  background: linear-gradient(160deg, var(--s-hair) 0%, var(--s-hair2) 100%);
+  border-radius: 48% 48% 42% 42% / 46% 46% 60% 60%;
+  z-index: -1;
+}
+/* fringe: a forehead cap whose bottom edge dips into 3 soft bang
+   points (center part), all kept above the eyebrows */
+.av-hair-front {
+  position: absolute;
+  left: 50%; top: -10%;
+  width: calc(var(--s-head-w) * 1.05);
+  height: calc(var(--s-head-h) * 0.30);
+  transform: translateX(-50%) translateZ(20px);
+  background-image:
+    radial-gradient(55% 40% at 50% 24%, var(--s-hair-shine) 0%, transparent 62%),
+    linear-gradient(160deg, var(--s-hair) 0%, var(--s-hair2) 100%);
+  border-radius: 50% 50% 44% 44% / 78% 78% 70% 70%;
+  z-index: 7;
+  pointer-events: none;
+  box-shadow: inset 0 -5px 9px rgba(0,0,0,.10);
+}
+/* two short bang points dipping from the cap, leaving a center part */
+.av-hair-front::before,
+.av-hair-front::after {
+  content: "";
+  position: absolute;
+  top: 56%;
+  width: 30%; height: 64%;
+  background: linear-gradient(165deg, var(--s-hair) 0%, var(--s-hair2) 100%);
+  filter: drop-shadow(0 4px 3px rgba(0,0,0,.10));
+}
+.av-hair-front::before { /* left of part */
+  left: 20%;
+  border-radius: 60% 40% 48% 52% / 40% 30% 70% 80%;
+  transform: rotate(7deg);
+  transform-origin: top center;
+}
+.av-hair-front::after { /* right of part */
+  right: 20%;
+  border-radius: 40% 60% 52% 48% / 30% 40% 80% 70%;
+  transform: rotate(-7deg);
+  transform-origin: top center;
+}
+
+/* accessory mount (model extras) */
+.av-acc { position: absolute; inset: 0; z-index: 8; pointer-events: none; }
+
+/* ============================================================
+   Hair styles — extra hair pieces behind the face, shown by a
+   mutually-exclusive .hair-* class on the avatar root.
+   ============================================================ */
+.av-hair-tails { position: absolute; inset: 0; transform: translateZ(-18px); }
+.av-hair-tails .tail { position: absolute; display: none;
+  background: linear-gradient(160deg, var(--s-hair), var(--s-hair2)); }
+
+/* twin-tails */
+.avatar.hair-twintails .av-hair-tails .tail.l,
+.avatar.hair-twintails .av-hair-tails .tail.r { display: block; }
+.avatar.hair-twintails .tail.l,
+.avatar.hair-twintails .tail.r {
+  top: 8%; width: 64px; height: calc(var(--s-head-h) * 0.92);
+  border-radius: 50% 50% 46% 46% / 22% 22% 60% 60%;
+  box-shadow: inset -6px 0 10px rgba(0,0,0,.12);
+}
+.avatar.hair-twintails .tail.l { left: -34px; transform: rotate(8deg); }
+.avatar.hair-twintails .tail.r { right: -34px; transform: rotate(-8deg); }
+/* hair tie */
+.avatar.hair-twintails .tail.l::before,
+.avatar.hair-twintails .tail.r::before {
+  content: ""; position: absolute; top: 4%; left: 50%; width: 70%; height: 14px;
+  transform: translateX(-50%); background: var(--s-acc); border-radius: 8px;
+}
+
+/* ponytail (single, behind, swept to one side) */
+.avatar.hair-ponytail .av-hair-tails .tail.pony { display: block; }
+.avatar.hair-ponytail .tail.pony {
+  top: 4%; right: -28px; width: 70px; height: calc(var(--s-head-h) * 1.0);
+  border-radius: 48% 52% 40% 60% / 20% 20% 70% 80%;
+  transform: rotate(-10deg);
+}
+.avatar.hair-ponytail .tail.pony::before {
+  content: ""; position: absolute; top: 2%; left: 40%; width: 60%; height: 14px;
+  background: var(--s-acc); border-radius: 8px;
+}
+
+/* long / short tweak the back hair height */
+.avatar.hair-long  .av-hair-back { height: calc(var(--s-head-h) * 1.7); border-radius: 48% 48% 46% 46% / 40% 40% 58% 58%; }
+.avatar.hair-short .av-hair-back { height: calc(var(--s-head-h) * 0.92); }
+
+/* ============================================================
+   Toggleable accessories — always in the DOM, shown when the
+   avatar root carries the matching .acc-* class. They live inside
+   .av-head so they rotate with the head.
+   ============================================================ */
+.av-extras { position: absolute; inset: 0; z-index: 9; pointer-events: none; transform: translateZ(22px); }
+.av-extras .acc { position: absolute; inset: 0; display: none; }
+.avatar.acc-ahoge      .acc-ahoge,
+.avatar.acc-glasses    .acc-glasses,
+.avatar.acc-headphones .acc-headphones,
+.avatar.acc-ribbon     .acc-ribbon,
+.avatar.acc-hat        .acc-hat,
+.avatar.acc-collar     .acc-collar { display: block; }
+
+/* collar / clothing hint at the base of the head (turtleneck-style,
+   rotates with the head so it reads like a worn collar) */
+.acc-collar .neck {
+  position: absolute; left: 50%; bottom: 2%;
+  width: 40%; height: 14%;
+  transform: translateX(-50%);
+  background: var(--s-skin-sh);
+  border-radius: 0 0 40% 40% / 0 0 100% 100%;
+}
+.acc-collar .wear {
+  position: absolute; left: 50%; bottom: -12%;
+  width: 88%; height: 24%;
+  transform: translateX(-50%);
+  background: linear-gradient(160deg, var(--s-acc), color-mix(in srgb, var(--s-acc) 60%, #000));
+  border-radius: 46% 46% 34% 34% / 80% 80% 46% 46%;
+  box-shadow: inset 0 6px 10px rgba(255,255,255,.25);
+}
+
+/* ahoge — single curly hair antenna (scoped to the extras element so
+   the rule never leaks onto the avatar root which carries .acc-ahoge) */
+.av-extras .acc-ahoge::before {
+  content: ""; position: absolute; left: 48%; top: -16%;
+  width: 10px; height: 64px;
+  background: linear-gradient(var(--s-hair), var(--s-hair2));
+  border-radius: 60% 40% 50% 50%;
+  transform: rotate(14deg);
+  transform-origin: bottom center;
+  box-shadow: 0 0 0 0 transparent;
+  clip-path: polygon(40% 100%, 60% 100%, 80% 40%, 55% 0%, 95% 30%, 50% -5%, 5% 35%);
+}
+
+/* glasses */
+.acc-glasses .lens {
+  position: absolute; top: calc(38% + var(--s-eye-y) - 4px);
+  width: calc(var(--s-eye-w) + 16px); height: calc(var(--s-eye-h) + 4px);
+  border: 4px solid #3a3f4c; border-radius: 46% 46% 48% 48% / 50%;
+  background: radial-gradient(120% 120% at 30% 20%, rgba(255,255,255,.35), rgba(180,210,255,.08));
+  box-shadow: 0 2px 4px rgba(0,0,0,.2);
+}
+.acc-glasses .lens.l { left: calc(50% - var(--s-eye-gap) - var(--s-eye-w) - 8px); }
+.acc-glasses .lens.r { right: calc(50% - var(--s-eye-gap) - var(--s-eye-w) - 8px); }
+.acc-glasses .bridge {
+  position: absolute; top: calc(44% + var(--s-eye-y));
+  left: 50%; width: calc(var(--s-eye-gap) * 2 - 4px); height: 4px;
+  transform: translateX(-50%); background: #3a3f4c; border-radius: 4px;
+}
+
+/* headphones */
+.acc-headphones .band {
+  position: absolute; left: 50%; top: -14%;
+  width: calc(var(--s-head-w) * 1.06); height: calc(var(--s-head-h) * 0.62);
+  transform: translateX(-50%);
+  border: 12px solid #2c3440; border-bottom: none;
+  border-radius: 50% 50% 0 0; box-sizing: border-box;
+}
+.acc-headphones .cup {
+  position: absolute; top: 42%;
+  width: 42px; height: 60px; background: linear-gradient(#3a4250, #232a35);
+  border-radius: 14px; box-shadow: inset 0 0 8px rgba(0,0,0,.5);
+}
+.acc-headphones .cup::after {
+  content: ""; position: absolute; inset: 8px;
+  border-radius: 10px; background: var(--s-acc); opacity: .5;
+}
+.acc-headphones .cup.l { left: -22px; }
+.acc-headphones .cup.r { right: -22px; }
+
+/* ribbon (top-left bow) */
+.acc-ribbon .loop {
+  position: absolute; top: -6%; width: 36px; height: 30px;
+  background: radial-gradient(closest-side at 60% 40%, color-mix(in srgb, var(--s-acc) 80%, #fff), var(--s-acc));
+  border-radius: 60% 40% 50% 50%;
+}
+.acc-ribbon .loop.l { left: 22%; transform: rotate(-26deg); }
+.acc-ribbon .loop.r { left: 34%; transform: rotate(26deg); }
+.acc-ribbon .knot {
+  position: absolute; top: 0; left: 30%; width: 16px; height: 16px;
+  background: var(--s-acc); border-radius: 50%;
+}
+
+/* hat (beanie) */
+.acc-hat .brim {
+  position: absolute; left: 50%; top: -6%;
+  width: calc(var(--s-head-w) * 1.02); height: 30px;
+  transform: translateX(-50%);
+  background: color-mix(in srgb, var(--s-acc) 70%, #2a2a30);
+  border-radius: 16px;
+}
+.acc-hat .top {
+  position: absolute; left: 50%; top: -28%;
+  width: calc(var(--s-head-w) * 0.86); height: calc(var(--s-head-h) * 0.34);
+  transform: translateX(-50%);
+  background: linear-gradient(160deg, var(--s-acc), color-mix(in srgb, var(--s-acc) 60%, #000));
+  border-radius: 50% 50% 30% 30% / 70% 70% 40% 40%;
+}
+.acc-hat .pom {
+  position: absolute; left: 50%; top: -34%;
+  width: 30px; height: 30px; transform: translateX(-50%);
+  background: radial-gradient(closest-side, #fff, #d7d7e0);
+  border-radius: 50%;
+}
+
+/* ============================================================
+   Idle motion is driven from JS (app.js) by writing the --p-*
+   pose vars on a rAF loop, so it blends seamlessly with live
+   tracking instead of fighting the transform stack.
+   ============================================================ */
+
+/* Accessibility: honour reduced-motion by stopping the looping
+   idle CSS animations (the JS idle loop also checks this). */
+@media (prefers-reduced-motion: reduce) {
+  .model-slime .av-face-base,
+  .model-ghost .av-body,
+  .model-robot .robo-antenna i,
+  .bear-ear, .panda-ear, .cat-ear, .fox-ear, .rabbit-ear {
+    animation: none !important;
+  }
+}
+
+/* ============================================================
+   MODEL: bear  (round head, ears, snout)
+   ============================================================ */
+.model-bear .av-ear { display: none; }       /* hide human ears */
+.model-bear .av-hair-front { display: none; } /* no fringe */
+.model-bear .av-hair-back { display: none; }
+.model-bear .av-lash { opacity: .5; height: 8px; }
+
+.model-bear .bear-ear {
+  position: absolute;
+  top: -22px;
+  width: 78px; height: 78px;
+  border-radius: 50%;
+  background: radial-gradient(60% 60% at 50% 40%, var(--s-skin) 0%, var(--s-skin-sh) 100%);
+  z-index: 0;
+}
+.model-bear .bear-ear::after {
+  content: ""; position: absolute; inset: 26%;
+  background: var(--s-skin-line); border-radius: 50%; opacity: .55;
+}
+.model-bear .bear-ear.left { left: -6px; }
+.model-bear .bear-ear.right { right: -6px; }
+
+.model-bear .bear-snout {
+  position: absolute;
+  left: 50%; top: 58%;
+  width: 96px; height: 74px;
+  transform: translateX(-50%);
+  background: radial-gradient(70% 70% at 50% 35%, #f1e2cf 0%, #d9c2a4 100%);
+  border-radius: 50%;
+  z-index: 1;
+}
+.model-bear .bear-nose {
+  position: absolute;
+  left: 50%; top: 16%;
+  width: 34px; height: 24px;
+  transform: translateX(-50%);
+  background: #3a2a1c;
+  border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+}
+/* bear mouth + nose sit on top of the snout */
+.model-bear .av-mouth { z-index: 3; }
+.model-bear .av-nose { display: none; }
+
+/* ============================================================
+   MODEL: claude  (round mascot, dot eyes, brand coral, burst halo)
+   ============================================================ */
+.model-claude .av-ear { display: none; }
+.model-claude .av-hair-front { display: none; }
+.model-claude .av-hair-back { display: none; }
+.model-claude .av-lash { display: none; }
+.model-claude .av-brow { display: none; }
+.model-claude .av-nose { display: none; }
+.model-claude .av-eye-white { box-shadow: none; }
+.model-claude .av-iris { width: 100%; height: 100%; box-shadow: none; }
+.model-claude .av-pupil { width: 0; height: 0; }
+.model-claude .av-hl { width: 26%; height: 26%; top: 10%; left: 16%; opacity: .85; }
+.model-claude .av-hl.small { display: none; }
+.model-claude .av-eye-white { border-radius: 50%; background: transparent; }
+.model-claude .av-mouth {
+  border-radius: 0 0 60% 60% / 0 0 100% 100%;
+}
+
+/* ============================================================
+   MODEL: cat  (triangular ears, whiskers, slit pupils, nose)
+   ============================================================ */
+.model-cat .av-ear,
+.model-cat .av-hair-front,
+.model-cat .av-hair-back,
+.model-cat .av-brow,
+.model-cat .av-nose { display: none; }
+.model-cat .av-lash { opacity: .35; height: 7px; }
+/* slit pupils */
+.model-cat .av-pupil {
+  width: 24%; height: 70%;
+  border-radius: 50%;
+  background: #15321f;
+}
+.model-cat .cat-ear {
+  position: absolute; top: -38px;
+  width: 0; height: 0;
+  border-left: 40px solid transparent;
+  border-right: 40px solid transparent;
+  border-bottom: 64px solid var(--s-skin-sh);
+  z-index: 0;
+}
+.model-cat .cat-ear::after {
+  content: ""; position: absolute; left: -22px; top: 22px;
+  width: 0; height: 0;
+  border-left: 22px solid transparent;
+  border-right: 22px solid transparent;
+  border-bottom: 36px solid #ffc2cb;
+}
+.model-cat .cat-ear.left { left: 16px; transform: rotate(-16deg); }
+.model-cat .cat-ear.right { right: 16px; transform: rotate(16deg); }
+.model-cat .cat-nose {
+  position: absolute; left: 50%; top: 58%;
+  width: 18px; height: 13px; transform: translateX(-50%);
+  background: #e58aa0; border-radius: 50% 50% 50% 50% / 40% 40% 100% 100%;
+  z-index: 4;
+}
+.model-cat .cat-whiskers {
+  position: absolute; top: 60%; width: 70px; height: 40px; z-index: 3;
+}
+.model-cat .cat-whiskers.left { left: -42px; }
+.model-cat .cat-whiskers.right { right: -42px; transform: scaleX(-1); }
+.model-cat .cat-whiskers i {
+  position: absolute; left: 0; width: 64px; height: 2px;
+  background: linear-gradient(90deg, transparent, #b9a290 30%);
+  border-radius: 2px; transform-origin: left center;
+}
+.model-cat .cat-whiskers i:nth-child(1) { top: 6px; transform: rotate(-12deg); }
+.model-cat .cat-whiskers i:nth-child(2) { top: 18px; }
+.model-cat .cat-whiskers i:nth-child(3) { top: 30px; transform: rotate(12deg); }
+
+/* ============================================================
+   MODEL: robot  (antenna, panels, LED eyes, grille mouth, bolts)
+   ============================================================ */
+.model-robot .av-ear,
+.model-robot .av-hair-front,
+.model-robot .av-hair-back,
+.model-robot .av-brow,
+.model-robot .av-nose,
+.model-robot .av-lash { display: none; }
+.model-robot .av-face-base {
+  box-shadow:
+    inset -10px -12px 22px rgba(0,0,0,.18),
+    inset 10px 8px 18px rgba(255,255,255,.6);
+  border: 3px solid #8d9bb0;
+}
+/* glowing LED eyes */
+.model-robot .av-eye-white {
+  border-radius: 14px;
+  box-shadow: inset 0 0 8px #000, 0 0 12px var(--s-iris);
+}
+.model-robot .av-iris {
+  width: 80%; height: 70%; border-radius: 8px;
+  background: radial-gradient(closest-side, var(--s-iris2), var(--s-iris));
+  box-shadow: 0 0 10px var(--s-iris);
+}
+.model-robot .av-pupil { width: 0; height: 0; }
+.model-robot .av-hl { width: 24%; height: 30%; border-radius: 3px; }
+.model-robot .av-mouth {
+  border-radius: 6px;
+  background:
+    repeating-linear-gradient(90deg, var(--s-mouth-color) 0 4px, transparent 4px 8px);
+  box-shadow: 0 0 8px var(--s-mouth-color);
+}
+.model-robot .av-mouth-inner { display: none; }
+.model-robot .robo-antenna {
+  position: absolute; left: 50%; top: -34px; width: 4px; height: 34px;
+  transform: translateX(-50%); background: #8d9bb0; z-index: 0;
+}
+.model-robot .robo-antenna i {
+  position: absolute; top: -12px; left: 50%; width: 16px; height: 16px;
+  transform: translateX(-50%); background: var(--s-acc); border-radius: 50%;
+  box-shadow: 0 0 12px var(--s-acc);
+  animation: robo-blink 1.8s ease-in-out infinite;
+}
+@keyframes robo-blink { 0%,100%{opacity:1;} 50%{opacity:.35;} }
+.model-robot .robo-panel {
+  position: absolute; top: 38%; width: 26px; height: 70px;
+  background: linear-gradient(var(--s-skin-sh), #6f7d92);
+  border-radius: 8px; z-index: 0;
+}
+.model-robot .robo-panel.left { left: -16px; }
+.model-robot .robo-panel.right { right: -16px; }
+.model-robot .robo-bolt {
+  position: absolute; width: 12px; height: 12px; border-radius: 50%;
+  background: radial-gradient(closest-side, #eef3fa, #8d9bb0);
+  box-shadow: inset 0 0 0 2px #6f7d92; z-index: 4;
+}
+.model-robot .robo-bolt.tl { left: 14px; top: 12px; }
+.model-robot .robo-bolt.tr { right: 14px; top: 12px; }
+.model-robot .robo-bolt.bl { left: 14px; bottom: 12px; }
+.model-robot .robo-bolt.br { right: 14px; bottom: 12px; }
+
+/* ============================================================
+   MODEL: fox  (pointed orange ears w/ white inner, white muzzle)
+   ============================================================ */
+.model-fox .av-ear,
+.model-fox .av-hair-front,
+.model-fox .av-hair-back,
+.model-fox .av-brow,
+.model-fox .av-nose { display: none; }
+.model-fox .av-lash { opacity: .4; height: 7px; }
+.model-fox .fox-ear {
+  position: absolute; top: -40px; width: 0; height: 0;
+  border-left: 44px solid transparent; border-right: 44px solid transparent;
+  border-bottom: 72px solid var(--s-skin-sh); z-index: 0;
+}
+.model-fox .fox-ear::after {
+  content: ""; position: absolute; left: -20px; top: 28px;
+  width: 0; height: 0; border-left: 20px solid transparent;
+  border-right: 20px solid transparent; border-bottom: 38px solid #fff3e8;
+}
+.model-fox .fox-ear.left { left: 4px; transform: rotate(-18deg); }
+.model-fox .fox-ear.right { right: 4px; transform: rotate(18deg); }
+.model-fox .fox-muzzle {
+  position: absolute; left: 50%; top: 56%; width: 110px; height: 86px;
+  transform: translateX(-50%);
+  background: radial-gradient(70% 70% at 50% 30%, #fff7f0 0%, #f3e2d4 100%);
+  border-radius: 50% 50% 50% 50% / 40% 40% 70% 70%; z-index: 1;
+}
+.model-fox .fox-nose {
+  position: absolute; left: 50%; top: 8%; width: 26px; height: 18px;
+  transform: translateX(-50%); background: #3a2418;
+  border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+}
+.model-fox .av-mouth { z-index: 3; }
+
+/* ============================================================
+   MODEL: panda  (black round ears, black eye patches, black nose)
+   ============================================================ */
+.model-panda .av-ear,
+.model-panda .av-hair-front,
+.model-panda .av-hair-back,
+.model-panda .av-brow { display: none; }
+.model-panda .panda-ear {
+  position: absolute; top: -24px; width: 80px; height: 80px;
+  background: radial-gradient(60% 60% at 50% 40%, #2c2926, #181614);
+  border-radius: 50%; z-index: 0;
+}
+.model-panda .panda-ear.left { left: -8px; }
+.model-panda .panda-ear.right { right: -8px; }
+/* black eye patches behind the eyes */
+.model-panda .panda-patch {
+  position: absolute; top: calc(30% + var(--s-eye-y)); width: 76px; height: 92px;
+  background: radial-gradient(60% 60% at 50% 40%, #2c2926, #181614);
+  border-radius: 50% 50% 46% 46% / 56% 56% 44% 44%; z-index: 2;
+  transform: rotate(var(--patch-rot, 0deg));
+}
+.model-panda .panda-patch.left { left: calc(50% - var(--s-eye-gap) - var(--s-eye-w) - 18px); --patch-rot: 12deg; }
+.model-panda .panda-patch.right { right: calc(50% - var(--s-eye-gap) - var(--s-eye-w) - 18px); --patch-rot: -12deg; }
+.model-panda .av-eye { z-index: 3; }
+.model-panda .av-nose { width: 22px; height: 14px; background: #22201e; opacity: 1;
+  border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%; top: 52%; }
+
+/* ============================================================
+   MODEL: slime  (translucent jelly blob, jiggle, big shine)
+   ============================================================ */
+.model-slime .av-ear,
+.model-slime .av-hair-front,
+.model-slime .av-hair-back,
+.model-slime .av-brow,
+.model-slime .av-nose,
+.model-slime .av-lash { display: none; }
+.model-slime .av-face-base {
+  background:
+    radial-gradient(60% 50% at 38% 24%, #ffffffcc 0%, transparent 38%),
+    radial-gradient(120% 100% at 50% 20%, var(--s-skin) 0%, var(--s-skin-sh) 100%);
+  box-shadow:
+    inset -18px -22px 40px rgba(0,0,0,.10),
+    inset 16px 14px 30px rgba(255,255,255,.55);
+  animation: slime-jiggle 2.6s ease-in-out infinite;
+}
+@keyframes slime-jiggle {
+  0%,100% { transform: scale(1, 1); }
+  30%     { transform: scale(1.04, 0.96); }
+  60%     { transform: scale(0.97, 1.03); }
+}
+.model-slime .av-iris { box-shadow: none; }
+.model-slime .av-pupil { width: 0; height: 0; }
+.model-slime .slime-shine {
+  position: absolute; left: 26%; top: 16%;
+  width: 40px; height: 22px; background: #ffffffcc;
+  border-radius: 50%; transform: rotate(-20deg); filter: blur(1px); z-index: 5;
+}
+
+/* ============================================================
+   MODEL: ghost  (pale floaty body, wavy skirt, soft eyes)
+   ============================================================ */
+.model-ghost .av-ear,
+.model-ghost .av-hair-front,
+.model-ghost .av-hair-back,
+.model-ghost .av-brow,
+.model-ghost .av-nose,
+.model-ghost .av-lash { display: none; }
+.model-ghost .av-body { animation: ghost-float 3.4s ease-in-out infinite; }
+@keyframes ghost-float {
+  0%,100% { transform: translateX(-50%) translateY(0); }
+  50%     { transform: translateX(-50%) translateY(-10px); }
+}
+.model-ghost .av-face-base {
+  box-shadow:
+    inset -14px -16px 30px rgba(80,70,140,.10),
+    inset 14px 12px 24px rgba(255,255,255,.7);
+}
+/* wavy bottom skirt made of overlapping bumps */
+.model-ghost .ghost-skirt {
+  position: absolute; left: 50%; bottom: -6%;
+  width: var(--s-head-w); height: 40px; transform: translateX(-50%);
+  display: flex; justify-content: center; z-index: -1;
+}
+.model-ghost .ghost-skirt i {
+  width: 25%; height: 44px;
+  background: linear-gradient(var(--s-skin), var(--s-skin-sh));
+  border-radius: 0 0 50% 50%;
+  margin-top: -8px;
+}
+
+/* ============================================================
+   Idle ear twitches — subtle periodic "perk" so animal models
+   feel alive. Pure CSS so they also play in standalone exports.
+   Base rotation is baked into each keyframe set so it doesn't
+   clobber the ear's resting angle.
+   ============================================================ */
+.model-bear .bear-ear,
+.model-panda .panda-ear { transform-origin: bottom center; }
+.model-bear .bear-ear.left  { animation: ear-round-l 6s ease-in-out infinite; }
+.model-bear .bear-ear.right { animation: ear-round-r 7s ease-in-out infinite; }
+.model-panda .panda-ear.left  { animation: ear-round-l 6.5s ease-in-out infinite; }
+.model-panda .panda-ear.right { animation: ear-round-r 5.5s ease-in-out infinite; }
+@keyframes ear-round-l { 0%,90%,100%{transform:rotate(0deg)} 95%{transform:rotate(-8deg)} }
+@keyframes ear-round-r { 0%,88%,100%{transform:rotate(0deg)} 94%{transform:rotate(8deg)} }
+
+.model-cat .cat-ear,
+.model-fox .fox-ear,
+.model-rabbit .rabbit-ear { transform-origin: bottom center; }
+.model-cat .cat-ear.left  { animation: cat-ear-l 5.5s ease-in-out infinite; }
+.model-cat .cat-ear.right { animation: cat-ear-r 6.5s ease-in-out infinite; }
+@keyframes cat-ear-l { 0%,90%,100%{transform:rotate(-16deg)} 95%{transform:rotate(-26deg)} }
+@keyframes cat-ear-r { 0%,88%,100%{transform:rotate(16deg)} 94%{transform:rotate(26deg)} }
+.model-fox .fox-ear.left  { animation: fox-ear-l 6s ease-in-out infinite; }
+.model-fox .fox-ear.right { animation: fox-ear-r 7s ease-in-out infinite; }
+@keyframes fox-ear-l { 0%,91%,100%{transform:rotate(-18deg)} 96%{transform:rotate(-27deg)} }
+@keyframes fox-ear-r { 0%,89%,100%{transform:rotate(18deg)} 95%{transform:rotate(27deg)} }
+.model-rabbit .rabbit-ear.left  { animation: rab-ear-l 5s ease-in-out infinite; }
+.model-rabbit .rabbit-ear.right { animation: rab-ear-r 6s ease-in-out infinite; }
+@keyframes rab-ear-l { 0%,86%,100%{transform:rotate(-12deg)} 92%{transform:rotate(-19deg)} }
+@keyframes rab-ear-r { 0%,84%,100%{transform:rotate(12deg)} 90%{transform:rotate(19deg)} }
+
+/* ============================================================
+   MODEL: rabbit  (tall ears w/ pink inner, pink nose)
+   ============================================================ */
+.model-rabbit .av-ear,
+.model-rabbit .av-hair-front,
+.model-rabbit .av-hair-back,
+.model-rabbit .av-brow,
+.model-rabbit .av-nose { display: none; }
+.model-rabbit .av-lash { opacity: .4; height: 7px; }
+.model-rabbit .rabbit-ear {
+  position: absolute; top: -96px;
+  width: 42px; height: 120px;
+  background: linear-gradient(var(--s-skin), var(--s-skin-sh));
+  border-radius: 50% 50% 44% 44% / 40% 40% 60% 60%;
+  z-index: 0;
+}
+.model-rabbit .rabbit-ear i {
+  position: absolute; inset: 18% 24%;
+  background: #ffc2da; border-radius: 50% 50% 44% 44% / 40% 40% 60% 60%;
+}
+.model-rabbit .rabbit-ear.left { left: 30px; transform: rotate(-12deg); transform-origin: bottom center; }
+.model-rabbit .rabbit-ear.right { right: 30px; transform: rotate(12deg); transform-origin: bottom center; }
+.model-rabbit .rabbit-nose {
+  position: absolute; left: 50%; top: 56%;
+  width: 16px; height: 11px; transform: translateX(-50%);
+  background: #e57aa0; border-radius: 50% 50% 50% 50% / 40% 40% 100% 100%; z-index: 4;
+}
+
+/* ============================================================
+   MODEL: dragon  (horns, cheek fins, snout, slit pupils)
+   ============================================================ */
+.model-dragon .av-ear,
+.model-dragon .av-hair-front,
+.model-dragon .av-hair-back,
+.model-dragon .av-brow,
+.model-dragon .av-nose { display: none; }
+.model-dragon .av-lash { opacity: .35; height: 6px; }
+.model-dragon .av-pupil { width: 26%; height: 72%; border-radius: 50%; background: #2a1a08; }
+.model-dragon .dragon-horn {
+  position: absolute; top: -36px; width: 26px; height: 56px;
+  background: linear-gradient(160deg, #f3ead0, #c9b78a);
+  border-radius: 50% 50% 40% 40% / 70% 70% 30% 30%; z-index: 0;
+}
+.model-dragon .dragon-horn.left { left: 30px; transform: rotate(-22deg); }
+.model-dragon .dragon-horn.right { right: 30px; transform: rotate(22deg); }
+.model-dragon .dragon-fin {
+  position: absolute; top: 40%; width: 30px; height: 56px;
+  background: linear-gradient(var(--s-skin), var(--s-skin-sh));
+  z-index: 0;
+}
+.model-dragon .dragon-fin.left { left: -18px; border-radius: 60% 0 60% 60% / 50% 0 50% 50%; transform: rotate(-10deg); }
+.model-dragon .dragon-fin.right { right: -18px; border-radius: 0 60% 60% 60% / 0 50% 50% 50%; transform: rotate(10deg); }
+.model-dragon .dragon-snout {
+  position: absolute; left: 50%; top: 58%; width: 78px; height: 56px;
+  transform: translateX(-50%);
+  background: radial-gradient(70% 70% at 50% 30%, var(--s-skin) 0%, var(--s-skin-sh) 100%);
+  border-radius: 50% 50% 50% 50% / 40% 40% 70% 70%; z-index: 1;
+}
+.model-dragon .dragon-snout i {
+  position: absolute; top: 26%; width: 8px; height: 11px;
+  background: #1f6b48; border-radius: 50%;
+}
+.model-dragon .dragon-snout i:nth-child(1) { left: 26%; }
+.model-dragon .dragon-snout i:nth-child(2) { right: 26%; }
+.model-dragon .av-mouth { z-index: 3; }
+
+/* Anthropic-style sunburst behind the head */
+.model-claude .claude-burst {
+  position: absolute;
+  left: 50%; top: 50%;
+  width: calc(var(--s-head-w) * 1.5);
+  height: calc(var(--s-head-w) * 1.5);
+  transform: translate(-50%, -50%);
+  z-index: -2;
+  background:
+    conic-gradient(from 0deg,
+      var(--s-acc) 0deg 6deg, transparent 6deg 30deg,
+      var(--s-acc) 30deg 36deg, transparent 36deg 60deg,
+      var(--s-acc) 60deg 66deg, transparent 66deg 90deg,
+      var(--s-acc) 90deg 96deg, transparent 96deg 120deg,
+      var(--s-acc) 120deg 126deg, transparent 126deg 150deg,
+      var(--s-acc) 150deg 156deg, transparent 156deg 180deg,
+      var(--s-acc) 180deg 186deg, transparent 186deg 210deg,
+      var(--s-acc) 210deg 216deg, transparent 216deg 240deg,
+      var(--s-acc) 240deg 246deg, transparent 246deg 270deg,
+      var(--s-acc) 270deg 276deg, transparent 276deg 300deg,
+      var(--s-acc) 300deg 306deg, transparent 306deg 330deg,
+      var(--s-acc) 330deg 336deg, transparent 336deg 360deg);
+  opacity: .4;
+  border-radius: 50%;
+  -webkit-mask: radial-gradient(circle, transparent 38%, #000 39%, #000 70%, transparent 72%);
+          mask: radial-gradient(circle, transparent 38%, #000 39%, #000 70%, transparent 72%);
+}
+
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">◖◗</span>
+    <h1>CSS VTuber <em>Studio</em></h1>
+    <span class="tag">画像ゼロ・CSSだけで動くアバター</span>
+  </div>
+  <div class="topbar-actions">
+    <select id="modelPicker" class="model-picker" aria-label="モデル選択"></select>
+    <button id="galleryBtn" class="btn btn-gallery">🖼 ギャラリー</button>
+    <button id="trackBtn" class="btn btn-track">● フェイストラッキング</button>
+    <button id="shareBtn" class="btn btn-share">🔗 共有リンク</button>
+    <button id="exportBtn" class="btn btn-export">⤓ HTML出力</button>
+    <button id="helpBtn" class="btn-help" title="使い方">?</button>
+  </div>
+</header>
+
+<main class="layout">
+  <section class="stage-wrap">
+    <div class="stage" id="stage">
+      <div class="stage-grid"></div>
+      <div class="avatar-mount" id="avatarMount"></div>
+      <video id="camFeed" playsinline muted></video>
+      <canvas id="camOverlay"></canvas>
+    </div>
+    <div class="expr-bar" id="exprBar">
+      <span class="expr-label">表情</span>
+      <button data-expr="neutral" class="expr-btn">😐 通常</button>
+      <button data-expr="smile" class="expr-btn">😊 笑顔</button>
+      <button data-expr="surprised" class="expr-btn">😮 驚き</button>
+      <button data-expr="angry" class="expr-btn">😠 怒り</button>
+      <button data-expr="sad" class="expr-btn">🥺 悲しい</button>
+      <button data-expr="sleepy" class="expr-btn">😴 眠い</button>
+      <button data-expr="wink" class="expr-btn">😉 ウインク</button>
+      <button data-expr="happy" class="expr-btn">😄 にっこり</button>
+      <button data-expr="smug" class="expr-btn">😏 じと目</button>
+      <span class="expr-sep"></span>
+      <button id="talkBtn" class="expr-btn">🗣 喋るテスト</button>
+      <span class="expr-sep"></span>
+      <label class="chk"><input type="checkbox" id="togglePuppet"> マウス操作</label>
+    </div>
+    <div class="stage-bar">
+      <div class="stage-status" id="stageStatus">アイドル中</div>
+      <div class="stage-controls">
+        <button id="calibBtn" class="btn-mini calib-btn" hidden>🎯 キャリブレーション</button>
+        <label class="chk"><input type="checkbox" id="toggleIdle" checked> アイドルモーション</label>
+        <label class="chk"><input type="checkbox" id="toggleGrid" checked> グリッド</label>
+        <label class="chk"><input type="checkbox" id="toggleMirror" checked> ミラー</label>
+        <select id="bgScene" class="bg-scene" title="背景シーン">
+          <option value="solid">背景: 単色</option>
+          <option value="studio">スタジオ</option>
+          <option value="night">夜空</option>
+          <option value="stars">星空</option>
+          <option value="sunset">夕焼け</option>
+          <option value="chroma">クロマキー緑(OBS)</option>
+          <option value="transparent">透明(OBS)</option>
+        </select>
+        <input type="color" id="bgColor" value="#10141f" title="背景色">
+      </div>
+    </div>
+  </section>
+
+  <aside class="panel" id="panel">
+    <div class="panel-head">
+      <h2>コントロールパネル</h2>
+      <div class="panel-actions">
+        <button id="saveBtn" class="btn-mini">💾 保存</button>
+        <button id="randomBtn" class="btn-mini">🎲 ランダム</button>
+        <button id="resetBtn" class="btn-mini">↺ リセット</button>
+      </div>
+    </div>
+    <div class="panel-body" id="panelBody"></div>
+  </aside>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<div class="modal" id="helpModal" hidden>
+  <div class="modal-backdrop" data-close-help></div>
+  <div class="modal-card help-card">
+    <div class="modal-head">
+      <h2>CSS VTuber Studio へようこそ 🎭</h2>
+      <button class="modal-x" data-close-help>✕</button>
+    </div>
+    <div class="help-body">
+      <p><b>画像を一切使わず、CSSだけ</b>で動くVTuberアバターを作れます。</p>
+      <ol>
+        <li><b>モデルを選ぶ</b> — 上のドロップダウンで 人間 / クマ / クロード / ネコ / ロボット / キツネ / パンダ / スライム / おばけ / うさぎ / ドラゴン（全11種）。</li>
+        <li><b>微調整</b> — 右の<b>コントロールパネル</b>で目・髪・口・色・髪型・アクセサリ・テーマ配色を調整。🎲でランダム、💾で保存。</li>
+        <li><b>動かす</b> — <b>● フェイストラッキング</b>でカメラ連動（初回は許可＆🎯キャリブレーション）。カメラ無しでも「マウス操作」でOK。</li>
+        <li><b>配信</b> — 背景を「透明(OBS)」や「クロマキー緑」に → <b>⤓ HTML出力</b> で単体ファイルを保存し、OBSのブラウザソースに追加。</li>
+      </ol>
+      <p class="help-keys"><b>ショートカット:</b> <kbd>1</kbd>–<kbd>7</kbd> モデル / <kbd>R</kbd> ランダム / <kbd>G</kbd> ギャラリー / <kbd>E</kbd> 出力 / <kbd>Space</kbd> まばたき</p>
+      <button id="helpStart" class="btn btn-export help-start">はじめる</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="galleryModal" hidden>
+  <div class="modal-backdrop" data-close></div>
+  <div class="modal-card">
+    <div class="modal-head">
+      <h2>プリセットギャラリー</h2>
+      <div class="modal-head-actions">
+        <button id="jsonExportBtn" class="btn-mini">⬇ JSON書出</button>
+        <button id="jsonImportBtn" class="btn-mini">⬆ JSON読込</button>
+        <button class="modal-x" data-close>✕</button>
+      </div>
+    </div>
+    <input type="file" id="jsonFile" accept="application/json,.json" hidden>
+    <div class="gallery-grid" id="galleryGrid"></div>
+  </div>
+</div>
+
+<script>
+/* ===== js/models.js ===== */
+/* ============================================================
+   Model registry. Each model is the SAME slot structure so the
+   control panel and face tracking work identically across them.
+   A model only customizes:
+     - klass     : a body class for model-specific CSS overrides
+     - vars      : default --s-* style values
+     - accessory : extra CSS-only DOM injected into .av-acc
+   ============================================================ */
+window.VT_MODELS = [
+  {
+    id: 'mira',
+    name: 'ミラ（人間・少女）',
+    emoji: '🙂',
+    klass: 'model-human',
+    vars: {
+      '--s-skin': '#ffe3d3', '--s-skin-sh': '#f3b9a4', '--s-skin-line': '#e69e88',
+      '--s-iris': '#6a5acd', '--s-iris2': '#b8a9ff',
+      '--s-hair': '#6f80c4', '--s-hair2': '#4d5d9c', '--s-hair-shine': '#a7b4e6',
+      '--s-mouth-color': '#c4566a', '--s-brow-color': '#5d4636',
+      '--s-acc': '#ff6f91'
+    },
+    accessory: ''
+  },
+
+  {
+    id: 'kuma',
+    name: 'クマ（けもの）',
+    emoji: '🐻',
+    klass: 'model-bear',
+    vars: {
+      '--s-head-w': '250px', '--s-head-h': '236px',
+      '--s-head-round': '50% 50% 46% 46% / 50% 50% 50% 50%',
+      '--s-skin': '#caa179', '--s-skin-sh': '#a87f55', '--s-skin-line': '#8a6541',
+      '--s-eye-w': '44px', '--s-eye-h': '50px', '--s-eye-gap': '40px', '--s-eye-y': '6px',
+      '--s-iris': '#3a2a1c', '--s-iris2': '#6e4f33',
+      '--s-brow-color': '#6b4a2e', '--s-brow-thick': '6px',
+      '--s-mouth-color': '#5a3826', '--s-mouth-y': '86px', '--s-mouth-w': '30px',
+      '--s-nose-op': '1',
+      '--s-blush': '#e79a7a', '--s-blush-op': '0.4',
+      '--s-hair': '#c49a72', '--s-hair2': '#a87f55', '--s-hair-shine': '#dcb98f',
+      '--s-acc': '#3a2a1c'
+    },
+    accessory: `
+      <div class="bear-ear left"></div>
+      <div class="bear-ear right"></div>
+      <div class="bear-snout"><div class="bear-nose"></div></div>`
+  },
+
+  {
+    id: 'claude',
+    name: 'クロード（マスコット）',
+    emoji: '✴️',
+    klass: 'model-claude',
+    vars: {
+      '--s-head-w': '236px', '--s-head-h': '236px',
+      '--s-head-round': '50%',
+      '--s-skin': '#e8a07e', '--s-skin-sh': '#d97757', '--s-skin-line': '#c25c3c',
+      '--s-eye-w': '40px', '--s-eye-h': '52px', '--s-eye-gap': '34px', '--s-eye-y': '4px',
+      '--s-eye-white': '#2b1d16', '--s-iris': '#2b1d16', '--s-iris2': '#3a261c',
+      '--s-brow-thick': '0px', '--s-brow-w': '0px',
+      '--s-mouth-color': '#2b1d16', '--s-mouth-y': '64px', '--s-mouth-w': '34px',
+      '--s-nose-op': '0',
+      '--s-blush': '#ffb38f', '--s-blush-op': '0.5',
+      '--s-hair': '#d97757', '--s-hair2': '#c25c3c', '--s-hair-shine': '#f0b89c',
+      '--s-acc': '#d97757'
+    },
+    accessory: `
+      <div class="claude-burst"></div>`
+  },
+
+  {
+    id: 'neko',
+    name: 'ネコ（けもの）',
+    emoji: '🐱',
+    klass: 'model-cat',
+    vars: {
+      '--s-head-w': '232px', '--s-head-h': '212px',
+      '--s-head-round': '46% 46% 48% 48% / 48% 48% 52% 52%',
+      '--s-skin': '#fff4ea', '--s-skin-sh': '#e9d3c0', '--s-skin-line': '#d8b69e',
+      '--s-eye-w': '54px', '--s-eye-h': '64px', '--s-eye-gap': '36px', '--s-eye-y': '8px',
+      '--s-iris': '#3fae7a', '--s-iris2': '#9be8c0',
+      '--s-brow-thick': '0px', '--s-brow-w': '0px',
+      '--s-mouth-color': '#d98aa0', '--s-mouth-y': '74px', '--s-mouth-w': '24px',
+      '--s-nose-op': '1',
+      '--s-blush': '#ffb0b8', '--s-blush-op': '0.45',
+      '--s-hair': '#f0e2d4', '--s-hair2': '#dcc6b3', '--s-hair-shine': '#fff7ee',
+      '--s-acc': '#ffb0b8'
+    },
+    accessory: `
+      <div class="cat-ear left"></div>
+      <div class="cat-ear right"></div>
+      <div class="cat-nose"></div>
+      <div class="cat-whiskers left"><i></i><i></i><i></i></div>
+      <div class="cat-whiskers right"><i></i><i></i><i></i></div>`
+  },
+
+  {
+    id: 'robo',
+    name: 'ロボット（メカ）',
+    emoji: '🤖',
+    klass: 'model-robot',
+    vars: {
+      '--s-head-w': '236px', '--s-head-h': '212px',
+      '--s-head-round': '26% 26% 30% 30% / 26% 26% 34% 34%',
+      '--s-skin': '#cfd8e6', '--s-skin-sh': '#9aa8bd', '--s-skin-line': '#7c8aa0',
+      '--s-eye-w': '58px', '--s-eye-h': '40px', '--s-eye-gap': '30px', '--s-eye-y': '10px',
+      '--s-eye-white': '#0d1726', '--s-iris': '#19e3ff', '--s-iris2': '#bafcff',
+      '--s-brow-thick': '0px', '--s-brow-w': '0px',
+      '--s-mouth-color': '#19e3ff', '--s-mouth-y': '64px', '--s-mouth-w': '54px',
+      '--s-nose-op': '0',
+      '--s-blush': '#19e3ff', '--s-blush-op': '0.35',
+      '--s-hair': '#aeb9c9', '--s-hair2': '#7c8aa0', '--s-hair-shine': '#e4ebf5',
+      '--s-acc': '#19e3ff'
+    },
+    accessory: `
+      <div class="robo-antenna"><i></i></div>
+      <div class="robo-panel left"></div>
+      <div class="robo-panel right"></div>
+      <div class="robo-bolt tl"></div><div class="robo-bolt tr"></div>
+      <div class="robo-bolt bl"></div><div class="robo-bolt br"></div>`
+  },
+
+  {
+    id: 'kitsune',
+    name: 'キツネ（けもの）',
+    emoji: '🦊',
+    klass: 'model-fox',
+    vars: {
+      '--s-head-w': '240px', '--s-head-h': '214px',
+      '--s-head-round': '44% 44% 50% 50% / 46% 46% 54% 54%',
+      '--s-skin': '#ef9a5c', '--s-skin-sh': '#d97a3c', '--s-skin-line': '#b85f28',
+      '--s-eye-w': '50px', '--s-eye-h': '56px', '--s-eye-gap': '40px', '--s-eye-y': '4px',
+      '--s-eye-tilt': '8deg',
+      '--s-iris': '#5a3a1c', '--s-iris2': '#a87a40',
+      '--s-brow-thick': '0px', '--s-brow-w': '0px',
+      '--s-mouth-color': '#7a3826', '--s-mouth-y': '80px', '--s-mouth-w': '22px',
+      '--s-nose-op': '1',
+      '--s-blush': '#ffae8a', '--s-blush-op': '0.4',
+      '--s-hair': '#ef9a5c', '--s-hair2': '#d97a3c', '--s-hair-shine': '#ffc79a',
+      '--s-acc': '#7a3826'
+    },
+    accessory: `
+      <div class="fox-ear left"></div>
+      <div class="fox-ear right"></div>
+      <div class="fox-muzzle"><div class="fox-nose"></div></div>`
+  },
+
+  {
+    id: 'panda',
+    name: 'パンダ（けもの）',
+    emoji: '🐼',
+    klass: 'model-panda',
+    vars: {
+      '--s-head-w': '250px', '--s-head-h': '232px',
+      '--s-head-round': '50% 50% 48% 48% / 50% 50% 50% 50%',
+      '--s-skin': '#fbf7f2', '--s-skin-sh': '#e3dcd2', '--s-skin-line': '#cfc6ba',
+      '--s-eye-w': '40px', '--s-eye-h': '46px', '--s-eye-gap': '42px', '--s-eye-y': '10px',
+      '--s-iris': '#2b2420', '--s-iris2': '#5a4f47',
+      '--s-brow-thick': '0px', '--s-brow-w': '0px',
+      '--s-mouth-color': '#5a3a30', '--s-mouth-y': '84px', '--s-mouth-w': '26px',
+      '--s-nose-op': '1',
+      '--s-blush': '#ffb3b0', '--s-blush-op': '0.35',
+      '--s-hair': '#fbf7f2', '--s-hair2': '#e3dcd2', '--s-hair-shine': '#ffffff',
+      '--s-acc': '#22201e'
+    },
+    accessory: `
+      <div class="panda-ear left"></div>
+      <div class="panda-ear right"></div>
+      <div class="panda-patch left"></div>
+      <div class="panda-patch right"></div>`
+  },
+
+  {
+    id: 'slime',
+    name: 'スライム',
+    emoji: '🟢',
+    klass: 'model-slime',
+    vars: {
+      '--s-head-w': '240px', '--s-head-h': '210px',
+      '--s-head-round': '50% 50% 46% 46% / 64% 64% 40% 40%',
+      '--s-skin': '#8fe9b0', '--s-skin-sh': '#46c483', '--s-skin-line': '#2ea869',
+      '--s-eye-w': '40px', '--s-eye-h': '52px', '--s-eye-gap': '38px', '--s-eye-y': '6px',
+      '--s-eye-white': '#13321f', '--s-iris': '#0e2a18', '--s-iris2': '#1f5a36',
+      '--s-brow-thick': '0px', '--s-brow-w': '0px',
+      '--s-mouth-color': '#1e5638', '--s-mouth-y': '58px', '--s-mouth-w': '30px',
+      '--s-nose-op': '0',
+      '--s-blush': '#7fffc0', '--s-blush-op': '0.4',
+      '--s-hair': '#8fe9b0', '--s-hair2': '#46c483', '--s-hair-shine': '#e6fff1',
+      '--s-acc': '#46c483'
+    },
+    accessory: `<div class="slime-shine"></div>`
+  },
+
+  {
+    id: 'ghost',
+    name: 'おばけ',
+    emoji: '👻',
+    klass: 'model-ghost',
+    vars: {
+      '--s-head-w': '226px', '--s-head-h': '232px',
+      '--s-head-round': '50% 50% 40% 40% / 60% 60% 30% 30%',
+      '--s-skin': '#f3f1ff', '--s-skin-sh': '#d6d2f0', '--s-skin-line': '#b9b3e0',
+      '--s-eye-w': '38px', '--s-eye-h': '50px', '--s-eye-gap': '36px', '--s-eye-y': '2px',
+      '--s-eye-white': '#2a2350', '--s-iris': '#1d1840', '--s-iris2': '#4a3f7a',
+      '--s-brow-thick': '0px', '--s-brow-w': '0px',
+      '--s-mouth-color': '#3a2f66', '--s-mouth-y': '62px', '--s-mouth-w': '30px',
+      '--s-nose-op': '0',
+      '--s-blush': '#c9b8ff', '--s-blush-op': '0.45',
+      '--s-hair': '#f3f1ff', '--s-hair2': '#d6d2f0', '--s-hair-shine': '#ffffff',
+      '--s-acc': '#a99cff'
+    },
+    accessory: `<div class="ghost-skirt"><i></i><i></i><i></i><i></i></div>`
+  },
+
+  {
+    id: 'usagi',
+    name: 'うさぎ（けもの）',
+    emoji: '🐰',
+    klass: 'model-rabbit',
+    vars: {
+      '--s-head-w': '224px', '--s-head-h': '216px',
+      '--s-head-round': '48% 48% 50% 50% / 52% 52% 48% 48%',
+      '--s-skin': '#fffafc', '--s-skin-sh': '#f0e2ea', '--s-skin-line': '#dcc6d2',
+      '--s-eye-w': '46px', '--s-eye-h': '58px', '--s-eye-gap': '38px', '--s-eye-y': '8px',
+      '--s-iris': '#b5538f', '--s-iris2': '#ffc2e6',
+      '--s-brow-thick': '0px', '--s-brow-w': '0px',
+      '--s-mouth-color': '#d56a93', '--s-mouth-y': '70px', '--s-mouth-w': '22px',
+      '--s-nose-op': '1',
+      '--s-blush': '#ffb6cf', '--s-blush-op': '0.5',
+      '--s-hair': '#fffafc', '--s-hair2': '#f0e2ea', '--s-hair-shine': '#ffffff',
+      '--s-acc': '#ff9ec4'
+    },
+    accessory: `
+      <div class="rabbit-ear left"><i></i></div>
+      <div class="rabbit-ear right"><i></i></div>
+      <div class="rabbit-nose"></div>`
+  },
+
+  {
+    id: 'dragon',
+    name: 'ドラゴン',
+    emoji: '🐲',
+    klass: 'model-dragon',
+    vars: {
+      '--s-head-w': '236px', '--s-head-h': '216px',
+      '--s-head-round': '46% 46% 50% 50% / 50% 50% 50% 50%',
+      '--s-skin': '#8fe6b6', '--s-skin-sh': '#3fb583', '--s-skin-line': '#2a9168',
+      '--s-eye-w': '48px', '--s-eye-h': '58px', '--s-eye-gap': '40px', '--s-eye-y': '4px',
+      '--s-eye-tilt': '6deg',
+      '--s-iris': '#d4a020', '--s-iris2': '#ffe69a',
+      '--s-brow-thick': '0px', '--s-brow-w': '0px',
+      '--s-mouth-color': '#1f6b48', '--s-mouth-y': '78px', '--s-mouth-w': '26px',
+      '--s-nose-op': '0',
+      '--s-blush': '#7effc0', '--s-blush-op': '0.35',
+      '--s-hair': '#8fe6b6', '--s-hair2': '#3fb583', '--s-hair-shine': '#d8fff0',
+      '--s-acc': '#ffd86b'
+    },
+    accessory: `
+      <div class="dragon-horn left"></div>
+      <div class="dragon-horn right"></div>
+      <div class="dragon-fin left"></div>
+      <div class="dragon-fin right"></div>
+      <div class="dragon-snout"><i></i><i></i></div>`
+  }
+];
+
+window.VT_MODEL_BY_ID = Object.fromEntries(window.VT_MODELS.map(m => [m.id, m]));
+
+
+/* ===== js/presets.js ===== */
+/* ============================================================
+   Curated preset looks for the gallery. Each is a full state:
+     m = model id, s = style var overrides, c = classes, bg = scene
+   Applied via the same applyState() path as share links.
+   ============================================================ */
+window.VT_PRESETS = [
+  {
+    name: 'ミラ / 標準',
+    m: 'mira', s: {}, c: [], bg: 'studio',
+  },
+  {
+    name: 'ピンクツインテ',
+    m: 'mira',
+    s: { '--s-hair': '#ff9ec4', '--s-hair2': '#e96fb0',
+         '--s-hair-shine': '#ffd0e6', '--s-iris': '#ff5fa2', '--s-iris2': '#ffd0e6',
+         '--s-acc': '#ff5fa2', '--s-blush-op': '0.7' },
+    c: ['hair-twintails', 'acc-ribbon'], bg: 'sunset',
+  },
+  {
+    name: 'クール / メガネ',
+    m: 'mira',
+    s: { '--s-hair': '#3b4a63', '--s-hair2': '#26334a', '--s-hair-shine': '#566a8c',
+         '--s-iris': '#36b9c9', '--s-iris2': '#bff0f6', '--s-eye-tilt': '6deg',
+         '--s-acc': '#36b9c9' },
+    c: ['acc-glasses', 'acc-headphones', 'hair-short'], bg: 'night',
+  },
+  {
+    name: '金髪ロング',
+    m: 'mira',
+    s: { '--s-hair': '#ffd86b', '--s-hair2': '#e6a93f', '--s-hair-shine': '#fff0bf',
+         '--s-iris': '#5aa9ff', '--s-iris2': '#cfe7ff', '--s-eye-tilt': '-4deg',
+         '--s-acc': '#ff7aa8' },
+    c: ['hair-long', 'acc-ahoge'], bg: 'studio',
+  },
+  {
+    name: 'クマさん',
+    m: 'kuma', s: {}, c: [], bg: 'studio',
+  },
+  {
+    name: 'ネコ耳 / 夜',
+    m: 'neko',
+    s: { '--s-iris': '#9b6cff', '--s-iris2': '#dccbff', '--s-acc': '#9b6cff' },
+    c: ['acc-ribbon'], bg: 'stars',
+  },
+  {
+    name: 'クロード',
+    m: 'claude', s: {}, c: [], bg: 'sunset',
+  },
+  {
+    name: 'サイバーロボ',
+    m: 'robo',
+    s: { '--s-iris': '#ff4d6d', '--s-iris2': '#ffd0d8', '--s-mouth-color': '#ff4d6d',
+         '--s-acc': '#ff4d6d' },
+    c: [], bg: 'chroma',
+  },
+  {
+    name: 'キツネ / 夕焼け',
+    m: 'kitsune', s: {}, c: ['acc-ribbon'], bg: 'sunset',
+  },
+  {
+    name: 'パンダ',
+    m: 'panda', s: {}, c: [], bg: 'studio',
+  },
+  {
+    name: 'スライム / 星空',
+    m: 'slime', s: {}, c: [], bg: 'stars',
+  },
+  {
+    name: 'おばけ / 夜',
+    m: 'ghost', s: {}, c: [], bg: 'night',
+  },
+  {
+    name: '天使ミラ',
+    m: 'mira',
+    s: { '--s-hair': '#fff3d6', '--s-hair2': '#ecd9a8', '--s-hair-shine': '#fffaf0',
+         '--s-iris': '#7fd0ff', '--s-iris2': '#e0f5ff', '--s-acc': '#ffe39a' },
+    c: ['hair-long', 'acc-ahoge'], bg: 'studio',
+  },
+  {
+    name: 'ネオン青ロボ',
+    m: 'robo',
+    s: { '--s-iris': '#7cffd6', '--s-iris2': '#e6fff7', '--s-mouth-color': '#7cffd6',
+         '--s-acc': '#7cffd6' },
+    c: [], bg: 'night',
+  },
+  {
+    name: 'うさぎ / リボン',
+    m: 'usagi', s: {}, c: ['acc-ribbon'], bg: 'studio',
+  },
+  {
+    name: 'ドラゴン / 夜',
+    m: 'dragon', s: {}, c: [], bg: 'night',
+  },
+  {
+    name: '魔法少女 ✨',
+    m: 'mira',
+    s: { '--s-hair': '#ffb3d1', '--s-hair2': '#e98bb4', '--s-hair-shine': '#ffe0ee',
+         '--s-iris': '#e85a90', '--s-iris2': '#ffd0e6', '--s-acc': '#ff7ab0' },
+    c: ['hair-twintails', 'acc-ribbon', 'fx-sparkle'], bg: 'sunset',
+  },
+  {
+    name: '森の妖精 ✨',
+    m: 'mira',
+    s: { '--s-hair': '#86c98a', '--s-hair2': '#4f9b5c', '--s-hair-shine': '#d6f0d0',
+         '--s-iris': '#3a8f56', '--s-iris2': '#cdeec0', '--s-acc': '#5bbf6e' },
+    c: ['hair-long', 'acc-ahoge', 'fx-sparkle'], bg: 'studio',
+  },
+  {
+    name: '執事ロボ',
+    m: 'robo',
+    s: { '--s-iris': '#ffd86b', '--s-iris2': '#fff3cf', '--s-mouth-color': '#ffd86b',
+         '--s-acc': '#3a4a7a' },
+    c: ['acc-collar'], bg: 'night',
+  },
+];
+
+
+/* ===== js/avatar.js ===== */
+/* ============================================================
+   Avatar builder. Renders the model-agnostic slot DOM into a
+   mount, applies a model's style vars + accessory, and exposes
+   helpers to set pose (--p-*) and style (--s-*) vars.
+   ============================================================ */
+(function () {
+  const SLOT_HTML = `
+    <div class="av-sparkles">
+      <i style="--sx:6%;--sy:18%;--sd:0s;--ss:1"></i>
+      <i style="--sx:90%;--sy:26%;--sd:.6s;--ss:.7"></i>
+      <i style="--sx:16%;--sy:64%;--sd:1.1s;--ss:.85"></i>
+      <i style="--sx:84%;--sy:70%;--sd:1.7s;--ss:1.1"></i>
+      <i style="--sx:50%;--sy:6%;--sd:.9s;--ss:.6"></i>
+      <i style="--sx:30%;--sy:90%;--sd:1.4s;--ss:.75"></i>
+    </div>
+    <div class="av-body">
+      <div class="av-head">
+        <div class="av-hair-back"></div>
+        <div class="av-hair-tails">
+          <div class="tail l"></div>
+          <div class="tail r"></div>
+          <div class="tail pony"></div>
+        </div>
+        <div class="av-face-base"></div>
+        <div class="av-ear left"></div>
+        <div class="av-ear right"></div>
+        <div class="av-acc"></div>
+        <div class="av-face">
+          <div class="av-brow left"></div>
+          <div class="av-brow right"></div>
+
+          <div class="av-eye left">
+            <div class="av-eye-white">
+              <div class="av-iris">
+                <div class="av-pupil"></div>
+                <div class="av-hl"></div>
+                <div class="av-hl small"></div>
+              </div>
+            </div>
+            <div class="av-lid"></div>
+            <div class="av-lash"></div>
+          </div>
+
+          <div class="av-eye right">
+            <div class="av-eye-white">
+              <div class="av-iris">
+                <div class="av-pupil"></div>
+                <div class="av-hl"></div>
+                <div class="av-hl small"></div>
+              </div>
+            </div>
+            <div class="av-lid"></div>
+            <div class="av-lash"></div>
+          </div>
+
+          <div class="av-nose"></div>
+          <div class="av-blush left"></div>
+          <div class="av-blush right"></div>
+          <div class="av-mouth"><div class="av-mouth-inner"></div></div>
+        </div>
+        <div class="av-hair-front"></div>
+
+        <div class="av-extras">
+          <div class="acc acc-ahoge"></div>
+          <div class="acc acc-glasses"><i class="lens l"></i><i class="bridge"></i><i class="lens r"></i></div>
+          <div class="acc acc-headphones"><i class="band"></i><i class="cup l"></i><i class="cup r"></i></div>
+          <div class="acc acc-ribbon"><i class="loop l"></i><i class="loop r"></i><i class="knot"></i></div>
+          <div class="acc acc-hat"><i class="brim"></i><i class="top"></i><i class="pom"></i></div>
+          <div class="acc acc-collar"><i class="neck"></i><i class="wear"></i></div>
+        </div>
+      </div>
+    </div>`;
+
+  function Avatar(mount) {
+    this.mount = mount;
+    this.el = document.createElement('div');
+    this.el.className = 'avatar';
+    this.el.innerHTML = SLOT_HTML;
+    mount.innerHTML = '';
+    mount.appendChild(this.el);
+    this.model = null;
+  }
+
+  Avatar.prototype.applyModel = function (model) {
+    this.model = model;
+    // reset model classes
+    this.el.className = 'avatar';
+    if (model.klass) this.el.classList.add(model.klass);
+    // accessory layer
+    this.el.querySelector('.av-acc').innerHTML = model.accessory || '';
+    // style vars
+    this.setStyles(model.vars || {});
+    return this;
+  };
+
+  Avatar.prototype.setStyle = function (name, value) {
+    this.el.style.setProperty(name, value);
+  };
+  Avatar.prototype.setStyles = function (obj) {
+    for (const k in obj) this.el.style.setProperty(k, obj[k]);
+  };
+  Avatar.prototype.getStyle = function (name) {
+    return this.el.style.getPropertyValue(name) ||
+      getComputedStyle(this.el).getPropertyValue(name);
+  };
+
+  Avatar.prototype.setPose = function (obj) {
+    for (const k in obj) this.el.style.setProperty(k, obj[k]);
+  };
+  Avatar.prototype.idle = function (on) {
+    this.el.classList.toggle('idle', !!on);
+  };
+
+  window.Avatar = Avatar;
+})();
+
+
+/* ===== js/panel.js ===== */
+/* ============================================================
+   Control panel. A declarative schema of groups -> controls, each
+   bound to a --s-* style var on the avatar. Updates are live.
+   ============================================================ */
+(function () {
+  const P = (v, label, min, max, step, unit) =>
+    ({ type: 'range', var: v, label, min, max, step, unit: unit === undefined ? 'px' : unit });
+  const C = (v, label) => ({ type: 'color', var: v, label });
+  const T = (cls, label) => ({ type: 'toggle', cls, label });
+  const SEL = (label, options) => ({ type: 'select', label, options });
+
+  const SCHEMA = [
+    { title: '顔・輪郭', icon: '◐', controls: [
+      P('--s-scale', 'サイズ', 0.5, 1.6, 0.01, ''),
+      P('--s-head-w', '顔の幅', 160, 300, 1),
+      P('--s-head-h', '顔の高さ', 170, 300, 1),
+      C('--s-skin', '肌の色'),
+      C('--s-skin-sh', '影の色'),
+    ]},
+    { title: '目', icon: '👁', controls: [
+      P('--s-eye-w', '横幅', 24, 90, 1),
+      P('--s-eye-h', '高さ', 24, 100, 1),
+      P('--s-eye-gap', '間隔', 8, 70, 1),
+      P('--s-eye-y', '上下位置', -20, 40, 1),
+      P('--s-eye-tilt', '吊り目↔たれ目', -16, 16, 0.5, 'deg'),
+      C('--s-iris', '瞳の色'),
+      C('--s-iris2', '瞳ハイライト'),
+    ]},
+    { title: '眉', icon: '⌒', controls: [
+      P('--s-brow-y', '上下位置', -16, 24, 1),
+      P('--s-brow-thick', '太さ', 0, 18, 1),
+      P('--s-brow-w', '長さ', 0, 64, 1),
+      P('--s-brow-angle', '角度', -16, 16, 0.5, 'deg'),
+      C('--s-brow-color', '眉の色'),
+    ]},
+    { title: '口', icon: '◡', controls: [
+      P('--s-mouth-w', '横幅', 16, 80, 1),
+      P('--s-mouth-y', '上下位置', 30, 110, 1),
+      C('--s-mouth-color', '口の色'),
+    ]},
+    { title: 'テーマ配色', icon: '🎨', controls: [
+      { type: 'themes', themes: [
+        { name: '桜', h: '#ffb3d1', d: '#e98bb4', sh: '#ffe0ee', i: '#e85a90', i2: '#ffd0e6', a: '#ff7ab0' },
+        { name: '海', h: '#6fc6e8', d: '#3a8fc4', sh: '#cfeeff', i: '#2b7fc4', i2: '#bfe8ff', a: '#3aa0e0' },
+        { name: '森', h: '#86c98a', d: '#4f9b5c', sh: '#d6f0d0', i: '#3a8f56', i2: '#cdeec0', a: '#5bbf6e' },
+        { name: '夜', h: '#6b6fb0', d: '#454a86', sh: '#a7abe0', i: '#7c6cff', i2: '#cfc8ff', a: '#9a8cff' },
+        { name: '炎', h: '#ff8a5c', d: '#e0552f', sh: '#ffd0b0', i: '#e0431f', i2: '#ffcaa0', a: '#ff6a3a' },
+        { name: '宝石', h: '#c46fd0', d: '#9a3fa8', sh: '#f0c0f6', i: '#d36a2a', i2: '#ffd9a0', a: '#cf5ad8' },
+        { name: 'モノクロ', h: '#9aa0ad', d: '#5c626e', sh: '#d6dae2', i: '#33373f', i2: '#aeb4be', a: '#7c8290' },
+        { name: 'オーロラ', h: '#6fe0c8', d: '#5a8fd0', sh: '#d0fff2', i: '#7a5cff', i2: '#bfe8ff', a: '#5be0b0' },
+      ]},
+    ]},
+    { title: '髪', icon: '〰', controls: [
+      SEL('髪型', [
+        { val: 'bob', label: 'ボブ（標準）', cls: '' },
+        { val: 'twintails', label: 'ツインテール', cls: 'hair-twintails' },
+        { val: 'ponytail', label: 'ポニーテール', cls: 'hair-ponytail' },
+        { val: 'long', label: 'ロング', cls: 'hair-long' },
+        { val: 'short', label: 'ショート', cls: 'hair-short' },
+      ]),
+      C('--s-hair', '髪の色'),
+      C('--s-hair2', '髪の影'),
+      C('--s-hair-shine', 'ツヤ'),
+    ]},
+    { title: 'チーク・その他', icon: '✿', controls: [
+      C('--s-blush', 'チーク色'),
+      P('--s-blush-op', 'チーク濃さ', 0, 1, 0.01, ''),
+      P('--s-nose-op', '鼻の濃さ', 0, 1, 0.01, ''),
+    ]},
+    { title: 'アクセサリ', icon: '🎀', controls: [
+      T('acc-glasses', 'メガネ'),
+      T('acc-headphones', 'ヘッドホン'),
+      T('acc-ribbon', 'リボン'),
+      T('acc-ahoge', 'アホ毛'),
+      T('acc-hat', 'ニット帽'),
+      T('acc-collar', '襟・服'),
+      T('fx-sparkle', '✨ キラキラ'),
+    ]},
+  ];
+
+  function parseVal(raw) {
+    const m = String(raw).trim().match(/-?[\d.]+/);
+    return m ? parseFloat(m[0]) : 0;
+  }
+
+  function build(panelBody, avatar, onChange) {
+    panelBody.innerHTML = '';
+    SCHEMA.forEach(group => {
+      const sec = document.createElement('section');
+      sec.className = 'pgroup';
+      sec.innerHTML = `<h3 class="pgroup-title"><span>${group.icon}</span>${group.title}</h3>`;
+      const body = document.createElement('div');
+      body.className = 'pgroup-body';
+      group.controls.forEach(ctl => {
+        const cur = avatar.getStyle(ctl.var).trim();
+        const row = document.createElement('div');
+        row.className = 'pctl';
+        if (ctl.type === 'themes') {
+          row.classList.add('pctl-themes');
+          row.innerHTML = `<div class="theme-row">${ctl.themes.map((t, i) =>
+            `<button class="theme-sw" data-i="${i}" title="${t.name}"
+               style="background:linear-gradient(135deg,${t.h},${t.d})">
+               <span>${t.name}</span></button>`).join('')}</div>`;
+          row.querySelectorAll('.theme-sw').forEach(btn => {
+            btn.addEventListener('click', () => {
+              const t = ctl.themes[btn.dataset.i];
+              avatar.setStyles({
+                '--s-hair': t.h, '--s-hair2': t.d, '--s-hair-shine': t.sh,
+                '--s-iris': t.i, '--s-iris2': t.i2, '--s-acc': t.a,
+              });
+              sync(panelBody, avatar);   // reflect new colours in the pickers
+              onChange && onChange();
+            });
+          });
+        } else if (ctl.type === 'select') {
+          const cur = ctl.options.find(o => o.cls && avatar.el.classList.contains(o.cls)) || ctl.options[0];
+          const allCls = ctl.options.map(o => o.cls).filter(Boolean);
+          row.innerHTML = `
+            <label>${ctl.label}</label>
+            <select class="pselect" data-classes="${allCls.join(',')}">
+              ${ctl.options.map(o => `<option value="${o.cls}" ${o === cur ? 'selected' : ''}>${o.label}</option>`).join('')}
+            </select>`;
+          row.querySelector('select').addEventListener('change', e => {
+            allCls.forEach(c => avatar.el.classList.remove(c));
+            if (e.target.value) avatar.el.classList.add(e.target.value);
+            onChange && onChange();
+          });
+        } else if (ctl.type === 'toggle') {
+          const on = avatar.el.classList.contains(ctl.cls);
+          row.classList.add('pctl-toggle');
+          row.innerHTML = `
+            <label class="tgl">
+              <input type="checkbox" data-cls="${ctl.cls}" ${on ? 'checked' : ''}>
+              <span>${ctl.label}</span>
+            </label>`;
+          row.querySelector('input').addEventListener('change', e => {
+            avatar.el.classList.toggle(ctl.cls, e.target.checked);
+            onChange && onChange();
+          });
+        } else if (ctl.type === 'color') {
+          row.innerHTML = `
+            <label>${ctl.label}</label>
+            <input type="color" value="${toHex(cur)}" data-var="${ctl.var}">`;
+          row.querySelector('input').addEventListener('input', e => {
+            avatar.setStyle(ctl.var, e.target.value);
+            onChange && onChange();
+          });
+        } else {
+          const val = cur ? parseVal(cur) : ctl.min;
+          row.innerHTML = `
+            <label>${ctl.label} <output>${fmt(val, ctl.unit)}</output></label>
+            <input type="range" min="${ctl.min}" max="${ctl.max}" step="${ctl.step}"
+                   value="${val}" data-var="${ctl.var}" data-unit="${ctl.unit}">`;
+          const input = row.querySelector('input');
+          const out = row.querySelector('output');
+          input.addEventListener('input', e => {
+            const v = e.target.value;
+            avatar.setStyle(ctl.var, ctl.unit ? v + ctl.unit : v);
+            out.textContent = fmt(v, ctl.unit);
+            onChange && onChange();
+          });
+        }
+        body.appendChild(row);
+      });
+      sec.appendChild(body);
+      panelBody.appendChild(sec);
+    });
+  }
+
+  // refresh control widgets to match current avatar var values (after model swap / random)
+  function sync(panelBody, avatar) {
+    panelBody.querySelectorAll('input[data-cls]').forEach(input => {
+      input.checked = avatar.el.classList.contains(input.dataset.cls);
+    });
+    panelBody.querySelectorAll('select[data-classes]').forEach(sel => {
+      const classes = sel.dataset.classes.split(',').filter(Boolean);
+      const active = classes.find(c => avatar.el.classList.contains(c)) || '';
+      sel.value = active;
+    });
+    panelBody.querySelectorAll('input[data-var]').forEach(input => {
+      const v = avatar.getStyle(input.dataset.var).trim();
+      if (input.type === 'color') {
+        input.value = toHex(v);
+      } else {
+        const n = parseVal(v);
+        input.value = n;
+        const out = input.closest('.pctl').querySelector('output');
+        if (out) out.textContent = fmt(n, input.dataset.unit);
+      }
+    });
+  }
+
+  function fmt(v, unit) {
+    const n = parseFloat(v);
+    const s = Number.isInteger(n) ? n : n.toFixed(2);
+    return unit === '' ? s : s + (unit || 'px');
+  }
+
+  function toHex(c) {
+    c = (c || '').trim();
+    if (/^#([0-9a-f]{6})$/i.test(c)) return c;
+    if (/^#([0-9a-f]{3})$/i.test(c)) {
+      return '#' + c.slice(1).split('').map(x => x + x).join('');
+    }
+    // rgb(...) -> hex
+    const m = c.match(/rgba?\(([^)]+)\)/);
+    if (m) {
+      const [r, g, b] = m[1].split(',').map(x => parseInt(x));
+      return '#' + [r, g, b].map(x => ('0' + (x & 255).toString(16)).slice(-2)).join('');
+    }
+    return '#000000';
+  }
+
+  const HAIR_STYLES = ['', 'hair-twintails', 'hair-ponytail', 'hair-long', 'hair-short'];
+  const ACCS = ['acc-glasses', 'acc-headphones', 'acc-ribbon', 'acc-ahoge', 'acc-hat'];
+
+  function randomize(avatar) {
+    const rnd = (a, b) => a + Math.random() * (b - a);
+    const pick = arr => arr[Math.floor(Math.random() * arr.length)];
+    const hue = Math.floor(rnd(0, 360));
+    const hsl = (h, s, l) => `hsl(${h} ${s}% ${l}%)`;
+    // a coherent hair palette from one hue
+    const hairH = Math.floor(rnd(0, 360));
+    avatar.setStyles({
+      '--s-eye-w': Math.round(rnd(40, 78)) + 'px',
+      '--s-eye-h': Math.round(rnd(46, 90)) + 'px',
+      '--s-eye-gap': Math.round(rnd(22, 50)) + 'px',
+      '--s-eye-tilt': rnd(-12, 12).toFixed(1) + 'deg',
+      '--s-iris': hsl(hue, Math.round(rnd(55, 85)), Math.round(rnd(45, 62))),
+      '--s-iris2': hsl(hue, Math.round(rnd(55, 90)), Math.round(rnd(72, 86))),
+      '--s-hair': hsl(hairH, Math.round(rnd(45, 80)), Math.round(rnd(48, 66))),
+      '--s-hair2': hsl(hairH, Math.round(rnd(45, 80)), Math.round(rnd(34, 50))),
+      '--s-hair-shine': hsl(hairH, Math.round(rnd(40, 70)), Math.round(rnd(74, 88))),
+      '--s-mouth-w': Math.round(rnd(24, 56)) + 'px',
+      '--s-brow-angle': rnd(-10, 10).toFixed(1) + 'deg',
+      '--s-blush-op': rnd(0.25, 0.75).toFixed(2),
+      '--s-acc': hsl(Math.floor(rnd(0, 360)), 80, 62),
+    });
+    // randomize hair style + accessories (only meaningful for models with hair,
+    // but harmless on others — extras are hidden by model CSS anyway)
+    [...HAIR_STYLES.filter(Boolean), ...ACCS].forEach(c => avatar.el.classList.remove(c));
+    const hairStyle = pick(HAIR_STYLES);
+    if (hairStyle) avatar.el.classList.add(hairStyle);
+    ACCS.forEach(c => { if (Math.random() < 0.3) avatar.el.classList.add(c); });
+  }
+
+  window.VTPanel = { build, sync, randomize, SCHEMA };
+})();
+
+
+/* ===== js/tracking.js ===== */
+/* ============================================================
+   Face tracking. Lazy-loads MediaPipe FaceMesh from CDN, reads
+   landmarks from the webcam, and emits normalized pose values
+   (-1..1, or 0..1) that map directly onto the avatar --p-* vars.
+   ============================================================ */
+(function () {
+  const CDN = 'https://cdn.jsdelivr.net/npm/@mediapipe';
+  const SCRIPTS = [
+    `${CDN}/camera_utils/camera_utils.js`,
+    `${CDN}/face_mesh/face_mesh.js`,
+  ];
+
+  function loadScript(src) {
+    return new Promise((res, rej) => {
+      if ([...document.scripts].some(s => s.src === src)) return res();
+      const s = document.createElement('script');
+      s.src = src; s.crossOrigin = 'anonymous';
+      s.onload = res; s.onerror = () => rej(new Error('load fail ' + src));
+      document.head.appendChild(s);
+    });
+  }
+
+  const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+
+  function Tracker() {
+    this.running = false;
+    this.camera = null;
+    this.mesh = null;
+    this.smooth = {};
+    this.base = null;     // neutral baseline, captured on first stable frames
+    this.baseFrames = 0;
+  }
+
+  Tracker.prototype.start = async function (video, onPose, onStatus) {
+    onStatus && onStatus('カメラ初期化中…');
+    await loadScript(SCRIPTS[0]);
+    await loadScript(SCRIPTS[1]);
+
+    const mesh = new window.FaceMesh({
+      locateFile: f => `${CDN}/face_mesh/${f}`,
+    });
+    mesh.setOptions({
+      maxNumFaces: 1,
+      refineLandmarks: true,
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5,
+    });
+    mesh.onResults(r => this._onResults(r, onPose, onStatus));
+    this.mesh = mesh;
+
+    const camera = new window.Camera(video, {
+      onFrame: async () => { if (this.running) await mesh.send({ image: video }); },
+      width: 640, height: 480,
+    });
+    this.camera = camera;
+    this.running = true;
+    await camera.start();
+    onStatus && onStatus('トラッキング中 ● 顔を正面に向けてください');
+  };
+
+  Tracker.prototype.recalibrate = function () {
+    this.base = null; this.baseFrames = 0; this._acc = null;
+  };
+
+  Tracker.prototype.stop = function () {
+    this.running = false;
+    if (this.camera) { try { this.camera.stop(); } catch (e) {} }
+    if (this.mesh) { try { this.mesh.close(); } catch (e) {} }
+    this.base = null; this.baseFrames = 0;
+  };
+
+  Tracker.prototype._sm = function (key, val, t) {
+    if (this.smooth[key] == null) this.smooth[key] = val;
+    this.smooth[key] = lerp(this.smooth[key], val, t);
+    return this.smooth[key];
+  };
+
+  Tracker.prototype._onResults = function (r, onPose, onStatus) {
+    const lms = r.multiFaceLandmarks && r.multiFaceLandmarks[0];
+    if (!lms) { onStatus && onStatus('顔を検出できません…'); return; }
+
+    const L = i => lms[i];
+    const eyeOuterL = L(33), eyeInnerL = L(133);
+    const eyeOuterR = L(263), eyeInnerR = L(362);
+    const noseTip = L(1), chin = L(152), brow = L(10);
+    const faceL = L(234), faceR = L(454);
+
+    const faceW = dist(faceL, faceR) || 1e-4;
+    const faceH = dist(brow, chin) || 1e-4;
+    const eyeMid = { x: (eyeOuterL.x + eyeOuterR.x) / 2, y: (eyeOuterL.y + eyeOuterR.y) / 2 };
+
+    // head pose
+    const yawRaw = (noseTip.x - eyeMid.x) / faceW;            // ~ -0.2..0.2
+    const pitchRaw = (noseTip.y - eyeMid.y) / faceH;          // baseline ~0.35
+    const rollRaw = Math.atan2(eyeOuterR.y - eyeOuterL.y, eyeOuterR.x - eyeOuterL.x);
+
+    // eye openness (EAR-like)
+    const openL = dist(L(159), L(145)) / (dist(eyeOuterL, eyeInnerL) || 1e-4);
+    const openR = dist(L(386), L(374)) / (dist(eyeOuterR, eyeInnerR) || 1e-4);
+
+    // mouth
+    const mOpen = dist(L(13), L(14)) / (dist(L(78), L(308)) || 1e-4);
+    const mWide = dist(L(78), L(308)) / faceW;
+
+    // brow raise (brow-to-eye gap)
+    const browGap = (dist(L(105), L(159)) + dist(L(334), L(386))) / 2 / faceH;
+
+    // gaze from iris centers (refineLandmarks)
+    let gazeX = 0, gazeY = 0;
+    if (lms.length >= 478) {
+      const irisL = L(468), irisR = L(473);
+      const gxL = (irisL.x - (eyeOuterL.x + eyeInnerL.x) / 2) / (dist(eyeOuterL, eyeInnerL) || 1e-4);
+      const gxR = (irisR.x - (eyeOuterR.x + eyeInnerR.x) / 2) / (dist(eyeOuterR, eyeInnerR) || 1e-4);
+      gazeX = (gxL + gxR);
+      const gyL = (irisL.y - (L(159).y + L(145).y) / 2) / (dist(L(159), L(145)) || 1e-4);
+      gazeY = gyL;
+    }
+
+    // capture neutral baseline over first ~15 stable frames
+    if (!this.base && this.baseFrames < 15) {
+      this.baseFrames++;
+      this._acc = this._acc || { pitch: 0, browGap: 0, mWide: 0, openL: 0, openR: 0 };
+      this._acc.pitch += pitchRaw; this._acc.browGap += browGap;
+      this._acc.mWide += mWide; this._acc.openL += openL; this._acc.openR += openR;
+      if (this.baseFrames === 15) {
+        const n = 15;
+        this.base = {
+          pitch: this._acc.pitch / n, browGap: this._acc.browGap / n,
+          mWide: this._acc.mWide / n, openL: this._acc.openL / n, openR: this._acc.openR / n,
+        };
+        onStatus && onStatus('トラッキング中 ●');
+      }
+    }
+    const base = this.base || { pitch: 0.34, browGap: 0.12, mWide: 0.42, openL: 0.32, openR: 0.32 };
+
+    // map → pose vars
+    const yaw = clamp(yawRaw * 5, -1, 1);
+    const pitch = clamp((pitchRaw - base.pitch) * 6, -1, 1);
+    const roll = clamp(rollRaw / 0.6, -1, 1);
+    const blinkL = clamp(1 - (openL / base.openL), 0, 1);
+    const blinkR = clamp(1 - (openR / base.openR), 0, 1);
+    const mouth = clamp((mOpen - 0.05) * 2.2, 0, 1);
+    const wide = clamp((mWide - base.mWide) * 6, -0.4, 1);
+    const browUp = clamp((browGap - base.browGap) * 8, -1, 1);
+
+    const t = 0.45;
+    onPose({
+      '--p-yaw': this._sm('yaw', yaw, t).toFixed(3),
+      '--p-pitch': this._sm('pitch', pitch, t).toFixed(3),
+      '--p-roll': this._sm('roll', roll, t).toFixed(3),
+      '--p-blink-l': this._sm('bl', blinkL, 0.6).toFixed(3),
+      '--p-blink-r': this._sm('br', blinkR, 0.6).toFixed(3),
+      '--p-mouth': this._sm('m', mouth, 0.5).toFixed(3),
+      '--p-mouth-wide': this._sm('mw', wide, t).toFixed(3),
+      '--p-brow': this._sm('bw', browUp, t).toFixed(3),
+      '--p-eye-x': this._sm('gx', clamp(gazeX * 3, -1, 1), 0.4).toFixed(3),
+      '--p-eye-y': this._sm('gy', clamp((gazeY - 0) * 2, -1, 1), 0.4).toFixed(3),
+    });
+  };
+
+  window.VTTracker = new Tracker();
+})();
+
+
+/* ===== js/export.js ===== */
+/* ============================================================
+   Standalone export. Bakes the current avatar (DOM + style vars
+   + avatar.css) into ONE self-contained .html file with an
+   embedded idle loop and an optional MediaPipe face tracker.
+   The output needs no build step and no local files.
+   ============================================================ */
+(function () {
+  function getAvatarCSS() {
+    var __inline = document.querySelector('style[data-avatar-css]');
+    if (__inline) return __inline.textContent;
+    // serialize the avatar.css rules from the loaded stylesheet
+    for (const sheet of document.styleSheets) {
+      if (sheet.href && /avatar\.css/.test(sheet.href)) {
+        try {
+          return [...sheet.cssRules].map(r => r.cssText).join('\n');
+        } catch (e) { /* cross-origin: fall through to fetch */ }
+      }
+    }
+    return null;
+  }
+
+  async function getAvatarCSSAsync() {
+    const inline = getAvatarCSS();
+    if (inline) return inline;
+    try {
+      const res = await fetch('css/avatar.css');
+      return await res.text();
+    } catch (e) {
+      return '/* avatar.css could not be inlined */';
+    }
+  }
+
+  function cleanAvatarHTML(avatarEl) {
+    const clone = avatarEl.cloneNode(true);
+    clone.classList.remove('idle');
+    // strip live pose vars so export opens neutral
+    const style = clone.getAttribute('style') || '';
+    const kept = style.split(';')
+      .map(s => s.trim())
+      .filter(s => s && !s.startsWith('--p-'))
+      .join('; ');
+    clone.setAttribute('style', kept);
+    return clone.outerHTML;
+  }
+
+  const RUNTIME = String.raw`
+(function(){
+  var av = document.querySelector('.avatar');
+  var status = document.getElementById('st');
+  var set = function(o){ for(var k in o) av.style.setProperty(k,o[k]); };
+
+  /* ---- idle motion ---- */
+  var idleOn = true, t0 = performance.now(), tracking = false, nextBlink = 1500;
+  var rm = matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 1;
+  function idle(now){
+    if(idleOn && !tracking){
+      var t=(now-t0)/1000;
+      set({
+        '--p-breath': (rm*(Math.sin(t*1.5)*0.5+0.5)).toFixed(3),
+        '--p-yaw': (rm*Math.sin(t*0.5)*0.25).toFixed(3),
+        '--p-pitch': (rm*Math.sin(t*0.37)*0.12).toFixed(3),
+        '--p-roll': (rm*Math.sin(t*0.43)*0.12).toFixed(3),
+        '--p-eye-x': (rm*Math.sin(t*0.6)*0.4).toFixed(3),
+      });
+      if(now>nextBlink){
+        av.style.setProperty('--p-blink','1');
+        setTimeout(function(){av.style.setProperty('--p-blink','0');},110);
+        nextBlink = now + 1800 + Math.random()*3000;
+      }
+    }
+    requestAnimationFrame(idle);
+  }
+  requestAnimationFrame(idle);
+
+  /* ---- face tracking (loaded on demand) ---- */
+  var CDN='https://cdn.jsdelivr.net/npm/@mediapipe';
+  function load(src){return new Promise(function(res,rej){var s=document.createElement('script');s.src=src;s.crossOrigin='anonymous';s.onload=res;s.onerror=rej;document.head.appendChild(s);});}
+  var dist=function(a,b){return Math.hypot(a.x-b.x,a.y-b.y);};
+  var clamp=function(v,a,b){return Math.max(a,Math.min(b,v));};
+  var sm={},lerp=function(a,b,t){return a+(b-a)*t;};
+  function S(k,v,t){if(sm[k]==null)sm[k]=v;sm[k]=lerp(sm[k],v,t);return sm[k];}
+  var base=null,bf=0,acc={pitch:0,bg:0,oL:0,oR:0};
+
+  window.startTrack = async function(){
+    if(tracking) return;
+    status.textContent='カメラ初期化中…';
+    try{
+      await load(CDN+'/camera_utils/camera_utils.js');
+      await load(CDN+'/face_mesh/face_mesh.js');
+    }catch(e){ status.textContent='読み込み失敗（ネット接続を確認）'; return; }
+    var video=document.createElement('video'); video.playsInline=true; video.muted=true;
+    var mesh=new window.FaceMesh({locateFile:function(f){return CDN+'/face_mesh/'+f;}});
+    mesh.setOptions({maxNumFaces:1,refineLandmarks:true,minDetectionConfidence:0.5,minTrackingConfidence:0.5});
+    mesh.onResults(onResults);
+    var cam=new window.Camera(video,{onFrame:async function(){await mesh.send({image:video});},width:640,height:480});
+    tracking=true; status.textContent='トラッキング中 ●';
+    await cam.start();
+  };
+
+  function onResults(r){
+    var lms=r.multiFaceLandmarks&&r.multiFaceLandmarks[0];
+    if(!lms){status.textContent='顔を検出できません…';return;}
+    var L=function(i){return lms[i];};
+    var oL=L(33),iL=L(133),oR=L(263),iR=L(362),nose=L(1),chin=L(152),top=L(10),fl=L(234),fr=L(454);
+    var fw=dist(fl,fr)||1e-4, fh=dist(top,chin)||1e-4;
+    var em={x:(oL.x+oR.x)/2,y:(oL.y+oR.y)/2};
+    var yaw=(nose.x-em.x)/fw, pitch=(nose.y-em.y)/fh, roll=Math.atan2(oR.y-oL.y,oR.x-oL.x);
+    var opL=dist(L(159),L(145))/(dist(oL,iL)||1e-4), opR=dist(L(386),L(374))/(dist(oR,iR)||1e-4);
+    var mo=dist(L(13),L(14))/(dist(L(78),L(308))||1e-4), mw=dist(L(78),L(308))/fw;
+    var bg=(dist(L(105),L(159))+dist(L(334),L(386)))/2/fh;
+    var gx=0,gy=0;
+    if(lms.length>=478){var il=L(468),ir=L(473);
+      gx=((il.x-(oL.x+iL.x)/2)/(dist(oL,iL)||1e-4))+((ir.x-(oR.x+iR.x)/2)/(dist(oR,iR)||1e-4));
+      gy=(il.y-(L(159).y+L(145).y)/2)/(dist(L(159),L(145))||1e-4);}
+    if(!base&&bf<15){bf++;acc.pitch+=pitch;acc.bg+=bg;acc.oL+=opL;acc.oR+=opR;
+      if(bf===15)base={pitch:acc.pitch/15,bg:acc.bg/15,oL:acc.oL/15,oR:acc.oR/15};}
+    var b=base||{pitch:0.34,bg:0.12,oL:0.32,oR:0.32};
+    set({
+      '--p-yaw':S('yaw',clamp(yaw*5,-1,1),0.45).toFixed(3),
+      '--p-pitch':S('pi',clamp((pitch-b.pitch)*6,-1,1),0.45).toFixed(3),
+      '--p-roll':S('ro',clamp(roll/0.6,-1,1),0.45).toFixed(3),
+      '--p-blink-l':S('bl',clamp(1-opL/b.oL,0,1),0.6).toFixed(3),
+      '--p-blink-r':S('br',clamp(1-opR/b.oR,0,1),0.6).toFixed(3),
+      '--p-mouth':S('m',clamp((mo-0.05)*2.2,0,1),0.5).toFixed(3),
+      '--p-mouth-wide':S('mw',clamp((mw-b.bg)*6,-0.4,1),0.45).toFixed(3),
+      '--p-brow':S('bw',clamp((bg-b.bg)*8,-1,1),0.45).toFixed(3),
+      '--p-eye-x':S('gx',clamp(gx*3,-1,1),0.4).toFixed(3),
+      '--p-eye-y':S('gy',clamp(gy*2,-1,1),0.4).toFixed(3)
+    });
+  }
+  document.getElementById('btnTrack').addEventListener('click',window.startTrack);
+  document.getElementById('btnIdle').addEventListener('click',function(){idleOn=!idleOn;this.classList.toggle('off',!idleOn);});
+})();`;
+
+  async function buildHTML(avatarEl, model, bg) {
+    const css = await getAvatarCSSAsync();
+    const avatarHTML = cleanAvatarHTML(avatarEl);
+    const title = (model && model.name) ? model.name : 'CSS VTuber';
+    const bgValue = bg || '#10141f';
+    const isTransparent = bgValue === 'transparent';
+
+    const doc = `<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>${title} — CSS VTuber</title>
+<style>
+:root{ color-scheme: dark; }
+*{ box-sizing:border-box; }
+html,body{ margin:0; height:100%; }
+body{
+  display:grid; place-items:center; min-height:100vh;
+  background:${bgValue};
+  font-family:system-ui,"Hiragino Kaku Gothic ProN",sans-serif;
+  overflow:hidden;
+}
+${isTransparent ? '/* OBS: add this file as a Browser Source — the background is transparent. */\nhtml,body{ background:transparent !important; }' : ''}
+.scene{ display:grid; place-items:center; gap:18px; }
+.toolbar{
+  position:fixed; left:50%; bottom:22px; transform:translateX(-50%);
+  display:flex; gap:10px; align-items:center;
+  background:rgba(20,26,40,.8); backdrop-filter:blur(8px);
+  padding:10px 14px; border-radius:999px; border:1px solid rgba(255,255,255,.1);
+}
+.toolbar button{
+  border:0; border-radius:999px; padding:9px 16px; cursor:pointer;
+  font-size:13px; font-weight:600; color:#fff; background:#3a4a7a;
+}
+.toolbar button#btnTrack{ background:#d05a78; }
+.toolbar button.off{ opacity:.45; }
+#st{ color:#9fb0d8; font-size:12px; min-width:120px; }
+${css}
+</style>
+</head>
+<body>
+<div class="scene">
+  ${avatarHTML}
+</div>
+<div class="toolbar">
+  <button id="btnTrack">● フェイストラッキング開始</button>
+  <button id="btnIdle">アイドル motion</button>
+  <span id="st">アイドル中</span>
+</div>
+<script>${RUNTIME}</script>
+</body>
+</html>`;
+    return doc;
+  }
+
+  async function exportHTML(avatarEl, model, bg) {
+    const doc = await buildHTML(avatarEl, model, bg);
+    const blob = new Blob([doc], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `css-vtuber-${(model && model.id) || 'avatar'}.html`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  }
+
+  window.VTExport = { exportHTML, buildHTML };
+})();
+
+
+/* ===== js/app.js ===== */
+/* ============================================================
+   App wiring: model picker, panel, idle loop, tracking, export.
+   ============================================================ */
+(function () {
+  const $ = s => document.querySelector(s);
+  const stage = $('#stage');
+  const mount = $('#avatarMount');
+  const panelBody = $('#panelBody');
+  const statusEl = $('#stageStatus');
+
+  const avatar = new Avatar(mount);
+  let currentModel = window.VT_MODELS[0];
+
+  // ---- model picker ----
+  const picker = $('#modelPicker');
+  window.VT_MODELS.forEach(m => {
+    const o = document.createElement('option');
+    o.value = m.id; o.textContent = `${m.emoji} ${m.name}`;
+    picker.appendChild(o);
+  });
+  function loadModel(model) {
+    currentModel = model;
+    avatar.applyModel(model);
+    VTPanel.build(panelBody, avatar, () => {});
+  }
+  picker.addEventListener('change', e => loadModel(window.VT_MODEL_BY_ID[e.target.value]));
+
+  // ---- panel buttons ----
+  $('#randomBtn').addEventListener('click', () => {
+    VTPanel.randomize(avatar);
+    VTPanel.sync(panelBody, avatar);
+    toast('ランダム生成しました');
+  });
+  $('#resetBtn').addEventListener('click', () => {
+    loadModel(currentModel);
+    toast('リセットしました');
+  });
+
+  // ---- stage toggles ----
+  $('#toggleGrid').addEventListener('change', e => stage.classList.toggle('no-grid', !e.target.checked));
+  $('#toggleMirror').addEventListener('change', e => stage.classList.toggle('no-mirror', !e.target.checked));
+  const idleChk = $('#toggleIdle');
+
+  // ---- background scenes ----
+  // each: studio = what the editor stage shows, exp = what the exported body uses
+  const BACKDROPS = {
+    solid:       { studio: () => $('#bgColor').value, exp: () => $('#bgColor').value },
+    studio:      { css: 'radial-gradient(120% 90% at 50% 18%, #2a2f48 0%, #14172447 40%, #0a0c14 100%)' },
+    night:       { css: 'radial-gradient(120% 120% at 50% 0%, #2a3a6a 0%, #11162e 55%, #070912 100%)' },
+    stars:       { css: 'radial-gradient(1.5px 1.5px at 20% 30%, #fff, transparent), radial-gradient(1.5px 1.5px at 70% 60%, #cfe, transparent), radial-gradient(2px 2px at 40% 80%, #fff, transparent), radial-gradient(1px 1px at 85% 20%, #fff, transparent), radial-gradient(120% 120% at 50% 10%, #1a2142, #060812)' },
+    sunset:      { css: 'linear-gradient(180deg, #2a2350 0%, #6a3f6e 45%, #d97a5a 80%, #f4c07a 100%)' },
+    chroma:      { css: '#00b140', exp: () => '#00b140', solid: true },
+    transparent: { studio: () => 'transparent', exp: () => 'transparent', checker: true },
+  };
+  let currentBg = 'solid';
+  function applyBg(id) {
+    currentBg = id;
+    const b = BACKDROPS[id] || BACKDROPS.solid;
+    stage.classList.toggle('bg-checker', !!b.checker);
+    const val = b.studio ? b.studio() : b.css;
+    stage.style.background = b.checker ? '' : val;   // checker handled by CSS class
+    if (!b.checker) stage.style.setProperty('--stage-bg', val);
+  }
+  function exportBgValue() {
+    const b = BACKDROPS[currentBg] || BACKDROPS.solid;
+    return b.exp ? b.exp() : (b.css || $('#bgColor').value);
+  }
+  $('#bgScene').addEventListener('change', e => applyBg(e.target.value));
+  $('#bgColor').addEventListener('input', () => { if (currentBg === 'solid') applyBg('solid'); });
+
+  // ---- idle motion loop (drives --p-* when not tracking) ----
+  let tracking = false;
+  let puppet = false;
+  let holdUntil = 0;            // expression hold: suspends idle writes
+  let t0 = performance.now();
+  let nextBlink = performance.now() + 1500;
+  const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function idleLoop(now) {
+    if (idleChk.checked && !tracking && !puppet && now > holdUntil) {
+      const t = (now - t0) / 1000;
+      // reduced motion: keep the avatar still, only allow gentle blinking
+      const amp = reduceMotion ? 0 : 1;
+      avatar.setPose({
+        '--p-breath': (amp * (Math.sin(t * 1.5) * 0.5 + 0.5)).toFixed(3),
+        '--p-yaw': (amp * Math.sin(t * 0.5) * 0.22).toFixed(3),
+        '--p-pitch': (amp * Math.sin(t * 0.37) * 0.12).toFixed(3),
+        '--p-roll': (amp * Math.sin(t * 0.43) * 0.12).toFixed(3),
+        '--p-eye-x': (amp * Math.sin(t * 0.6) * 0.4).toFixed(3),
+        '--p-eye-y': (amp * Math.sin(t * 0.45) * 0.25).toFixed(3),
+      });
+      if (now > nextBlink) {
+        avatar.setPose({ '--p-blink': '1' });
+        setTimeout(() => avatar.setPose({ '--p-blink': '0' }), 110);
+        nextBlink = now + 1800 + Math.random() * 3200;
+      }
+    }
+    requestAnimationFrame(idleLoop);
+  }
+  requestAnimationFrame(idleLoop);
+
+  // ---- tracking ----
+  const trackBtn = $('#trackBtn');
+  const calibBtn = $('#calibBtn');
+  const video = $('#camFeed');
+  calibBtn.addEventListener('click', () => {
+    VTTracker.recalibrate();
+    statusEl.textContent = '再キャリブレーション中… 正面を向いてください';
+    toast('正面を向いてキャリブレーション');
+  });
+  trackBtn.addEventListener('click', async () => {
+    if (tracking) {
+      VTTracker.stop();
+      tracking = false;
+      stage.classList.remove('tracking');
+      trackBtn.classList.remove('on');
+      trackBtn.textContent = '● フェイストラッキング';
+      statusEl.textContent = 'アイドル中';
+      calibBtn.hidden = true;
+      // reset blink to open
+      avatar.setPose({ '--p-blink-l': '0', '--p-blink-r': '0' });
+      return;
+    }
+    try {
+      trackBtn.textContent = '初期化中…';
+      await VTTracker.start(video, p => avatar.setPose(p), s => statusEl.textContent = s);
+      tracking = true;
+      stage.classList.add('tracking');
+      trackBtn.classList.add('on');
+      trackBtn.textContent = '■ トラッキング停止';
+      calibBtn.hidden = false;
+    } catch (e) {
+      console.error(e);
+      statusEl.textContent = 'カメラを起動できません: ' + e.message;
+      trackBtn.textContent = '● フェイストラッキング';
+      toast('カメラ起動に失敗しました');
+    }
+  });
+
+  // ---- expression presets ----
+  const EXPR = {
+    neutral:   { '--p-mouth':'0','--p-mouth-wide':'0','--p-brow':'0','--p-blink':'0','--p-blink-l':'0','--p-blink-r':'0','--p-pitch':'0' },
+    smile:     { '--p-mouth':'0.32','--p-mouth-wide':'0.85','--p-brow':'0.25','--p-blink':'0.18','--p-blink-l':'0.18','--p-blink-r':'0.18' },
+    surprised: { '--p-mouth':'0.7','--p-mouth-wide':'0','--p-brow':'1','--p-blink':'0','--p-blink-l':'0','--p-blink-r':'0','--p-pitch':'-0.15' },
+    angry:     { '--p-mouth':'0.12','--p-mouth-wide':'-0.3','--p-brow':'-1','--p-blink':'0.1','--p-blink-l':'0.1','--p-blink-r':'0.1','--p-pitch':'0.1' },
+    sad:       { '--p-mouth':'0.1','--p-mouth-wide':'-0.2','--p-brow':'0.55','--p-blink':'0.25','--p-pitch':'0.22','--p-eye-y':'0.4' },
+    sleepy:    { '--p-mouth':'0.22','--p-mouth-wide':'-0.1','--p-brow':'0.2','--p-blink':'0.7','--p-blink-l':'0.7','--p-blink-r':'0.7','--p-pitch':'0.25' },
+    wink:      { '--p-mouth':'0.3','--p-mouth-wide':'0.7','--p-blink-r':'1','--p-blink-l':'0','--p-brow':'0.3' },
+    happy:     { '--p-mouth':'0.42','--p-mouth-wide':'1','--p-blink':'0.5','--p-blink-l':'0.5','--p-blink-r':'0.5','--p-brow':'0.45' },
+    smug:      { '--p-mouth':'0.12','--p-mouth-wide':'0.35','--p-blink':'0.45','--p-blink-l':'0.45','--p-blink-r':'0.45','--p-brow':'-0.3','--p-eye-y':'0.25' },
+  };
+  let exprAnimTimer;
+  document.querySelectorAll('.expr-btn').forEach(b => {
+    b.addEventListener('click', () => {
+      if (tracking) { toast('トラッキング中は表情プリセットを使えません'); return; }
+      const e = EXPR[b.dataset.expr] || EXPR.neutral;
+      // reset transient pose first, then apply (with a brief glide)
+      avatar.setPose({ '--p-blink':'0','--p-blink-l':'0','--p-blink-r':'0','--p-eye-y':'0','--p-pitch':'0' });
+      avatar.el.classList.add('expr-anim');
+      avatar.setPose(e);
+      clearTimeout(exprAnimTimer);
+      exprAnimTimer = setTimeout(() => avatar.el.classList.remove('expr-anim'), 420);
+      holdUntil = performance.now() + 2800;   // hold the face before idle resumes
+    });
+  });
+
+  // ---- talk test (lip-sync preview, no mic needed) ----
+  let talking = false;
+  $('#talkBtn').addEventListener('click', () => {
+    if (tracking) { toast('トラッキング中はテスト不要です'); return; }
+    if (talking) return;
+    talking = true;
+    const end = performance.now() + 3500;
+    let next = 0;
+    function flap(now) {
+      if (now >= end) {
+        avatar.setPose({ '--p-mouth': '0', '--p-mouth-wide': '0' });
+        talking = false;
+        return;
+      }
+      holdUntil = now + 200;              // keep idle from overwriting the mouth
+      if (now >= next) {
+        // open in bursts like syllables, occasionally close
+        const open = Math.random() < 0.2 ? 0 : (0.25 + Math.random() * 0.6);
+        avatar.setPose({
+          '--p-mouth': open.toFixed(2),
+          '--p-mouth-wide': (Math.random() * 0.4 - 0.1).toFixed(2),
+        });
+        next = now + 90 + Math.random() * 110;
+      }
+      requestAnimationFrame(flap);
+    }
+    requestAnimationFrame(flap);
+  });
+
+  // ---- puppet (mouse) mode ----
+  const puppetChk = $('#togglePuppet');
+  puppetChk.addEventListener('change', e => {
+    puppet = e.target.checked && !tracking;
+    if (!puppet) avatar.setPose({ '--p-mouth':'0' });
+  });
+  stage.addEventListener('mousemove', e => {
+    if (!puppet) return;
+    const r = stage.getBoundingClientRect();
+    const nx = ((e.clientX - r.left) / r.width - 0.5) * 2;
+    const ny = ((e.clientY - r.top) / r.height - 0.5) * 2;
+    avatar.setPose({
+      '--p-yaw': (nx * 0.8).toFixed(3),
+      '--p-pitch': (-ny * 0.6).toFixed(3),
+      '--p-eye-x': (nx * 0.6).toFixed(3),
+      '--p-eye-y': (ny * 0.5).toFixed(3),
+    });
+  });
+  stage.addEventListener('mousedown', () => { if (puppet) avatar.setPose({ '--p-mouth':'0.7' }); });
+  stage.addEventListener('mouseup', () => { if (puppet) avatar.setPose({ '--p-mouth':'0' }); });
+
+  // ---- save / share via URL hash ----
+  function serialize() {
+    const styleVars = {};
+    (avatar.el.getAttribute('style') || '').split(';').forEach(s => {
+      const [k, v] = s.split(':').map(x => x && x.trim());
+      if (k && k.startsWith('--s-')) styleVars[k] = v;
+    });
+    const acc = [...avatar.el.classList]
+      .filter(c => c !== 'avatar' && c !== 'idle' && !c.startsWith('model-'));
+    return { m: currentModel.id, s: styleVars, c: acc };
+  }
+  function applyState(state) {
+    const model = window.VT_MODEL_BY_ID[state.m] || window.VT_MODELS[0];
+    picker.value = model.id;
+    loadModel(model);
+    if (state.c) state.c.forEach(c => avatar.el.classList.add(c));
+    if (state.s) avatar.setStyles(state.s);
+    VTPanel.sync(panelBody, avatar);
+  }
+  function encodeState() {
+    return btoa(unescape(encodeURIComponent(JSON.stringify(serialize()))))
+      .replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  }
+  function decodeState(s) {
+    try {
+      const b = s.replace(/-/g,'+').replace(/_/g,'/');
+      return JSON.parse(decodeURIComponent(escape(atob(b))));
+    } catch (e) { return null; }
+  }
+  $('#shareBtn').addEventListener('click', async () => {
+    const url = location.origin + location.pathname + '#a=' + encodeState();
+    try {
+      await navigator.clipboard.writeText(url);
+      toast('共有リンクをコピーしました ✓');
+    } catch (e) {
+      location.hash = 'a=' + encodeState();
+      toast('URLに保存しました（コピー不可・アドレスバー参照）');
+    }
+  });
+
+  // ---- saved avatars (localStorage) ----
+  const SAVE_KEY = 'vt_saved_avatars';
+  function getSaved() {
+    try { return JSON.parse(localStorage.getItem(SAVE_KEY) || '[]'); } catch (e) { return []; }
+  }
+  function setSaved(arr) {
+    try { localStorage.setItem(SAVE_KEY, JSON.stringify(arr)); } catch (e) {}
+  }
+  $('#saveBtn').addEventListener('click', () => {
+    const arr = getSaved();
+    const state = serialize();
+    state.bg = currentBg;
+    state.name = `${currentModel.emoji} 保存${arr.length + 1}`;
+    arr.push(state);
+    while (arr.length > 16) arr.shift();
+    setSaved(arr);
+    toast('アバターを保存しました ✓（ギャラリーから呼び出せます）');
+  });
+
+  // ---- preset gallery ----
+  const galleryModal = $('#galleryModal');
+  const galleryGrid = $('#galleryGrid');
+
+  function makeCard(item, opts) {
+    const card = document.createElement('button');
+    card.className = 'gallery-card';
+    const prev = document.createElement('div');
+    prev.className = 'gallery-prev';
+    card.appendChild(prev);
+    const name = document.createElement('div');
+    name.className = 'gallery-name';
+    name.textContent = item.name;
+    card.appendChild(name);
+    const mini = new Avatar(prev);
+    const model = window.VT_MODEL_BY_ID[item.m] || window.VT_MODELS[0];
+    mini.applyModel(model);
+    if (item.s) mini.setStyles(item.s);
+    (item.c || []).forEach(c => mini.el.classList.add(c));
+    card.addEventListener('click', () => {
+      applyState({ m: item.m, s: item.s, c: item.c });
+      if (item.bg) { $('#bgScene').value = item.bg; applyBg(item.bg); }
+      closeGallery();
+      toast(`「${item.name}」を適用しました ✓`);
+    });
+    if (opts && opts.onDelete) {
+      const del = document.createElement('span');
+      del.className = 'gallery-del';
+      del.textContent = '✕';
+      del.title = '削除';
+      del.addEventListener('click', e => { e.stopPropagation(); opts.onDelete(); });
+      card.appendChild(del);
+    }
+    return card;
+  }
+  function sectionLabel(text) {
+    const h = document.createElement('div');
+    h.className = 'gallery-section';
+    h.textContent = text;
+    return h;
+  }
+  function buildGallery() {
+    galleryGrid.innerHTML = '';
+    const saved = getSaved();
+    if (saved.length) {
+      galleryGrid.appendChild(sectionLabel('💾 保存したアバター'));
+      saved.forEach((item, i) => {
+        galleryGrid.appendChild(makeCard(item, {
+          onDelete: () => {
+            const arr = getSaved(); arr.splice(i, 1); setSaved(arr);
+            buildGallery();
+            toast('削除しました');
+          },
+        }));
+      });
+      galleryGrid.appendChild(sectionLabel('✨ プリセット'));
+    }
+    (window.VT_PRESETS || []).forEach(preset => galleryGrid.appendChild(makeCard(preset)));
+  }
+  function openGallery() {
+    buildGallery();   // rebuild each time so saved avatars stay fresh
+    galleryModal.hidden = false;
+  }
+
+  // ---- JSON export / import of the current avatar ----
+  $('#jsonExportBtn').addEventListener('click', () => {
+    const state = serialize();
+    state.bg = currentBg;
+    state.name = currentModel.name;
+    const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `css-vtuber-${currentModel.id}.json`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    toast('JSONを書き出しました ✓');
+  });
+  $('#jsonImportBtn').addEventListener('click', () => $('#jsonFile').click());
+  $('#jsonFile').addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const state = JSON.parse(reader.result);
+        if (!state || !window.VT_MODEL_BY_ID[state.m]) throw new Error('invalid');
+        applyState(state);
+        if (state.bg) { $('#bgScene').value = state.bg; applyBg(state.bg); }
+        closeGallery();
+        toast('JSONを読み込みました ✓');
+      } catch (err) {
+        toast('JSONの読み込みに失敗しました');
+      }
+      $('#jsonFile').value = '';
+    };
+    reader.readAsText(file);
+  });
+  function closeGallery() { galleryModal.hidden = true; }
+  $('#galleryBtn').addEventListener('click', openGallery);
+  galleryModal.querySelectorAll('[data-close]').forEach(el => el.addEventListener('click', closeGallery));
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeGallery(); });
+
+  // ---- export ----
+  $('#exportBtn').addEventListener('click', async () => {
+    toast('HTMLを書き出し中…');
+    try {
+      await VTExport.exportHTML(avatar.el, currentModel, exportBgValue());
+      toast('単体HTMLを出力しました ✓');
+    } catch (e) {
+      console.error(e);
+      toast('出力に失敗しました');
+    }
+  });
+
+  // ---- toast ----
+  let toastTimer;
+  function toast(msg) {
+    const el = $('#toast');
+    el.textContent = msg;
+    el.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
+  }
+
+  // ---- help overlay (auto-shows on first visit) ----
+  const helpModal = $('#helpModal');
+  function openHelp() { helpModal.hidden = false; }
+  function closeHelp() { helpModal.hidden = true; }
+  $('#helpBtn').addEventListener('click', openHelp);
+  $('#helpStart').addEventListener('click', closeHelp);
+  helpModal.querySelectorAll('[data-close-help]').forEach(el => el.addEventListener('click', closeHelp));
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeHelp(); });
+  try {
+    if (!localStorage.getItem('vt_seen_help')) {
+      openHelp();
+      localStorage.setItem('vt_seen_help', '1');
+    }
+  } catch (e) {}
+
+  // ---- keyboard shortcuts ----
+  document.addEventListener('keydown', e => {
+    const tag = (e.target.tagName || '').toLowerCase();
+    if (tag === 'input' || tag === 'select' || tag === 'textarea' || e.metaKey || e.ctrlKey) return;
+    const k = e.key.toLowerCase();
+    if (k >= '1' && k <= '9') {
+      const idx = parseInt(k, 10) - 1;
+      if (window.VT_MODELS[idx]) { picker.value = window.VT_MODELS[idx].id; loadModel(window.VT_MODELS[idx]); }
+    } else if (k === 'r') { $('#randomBtn').click(); }
+    else if (k === 'g') { galleryModal.hidden ? openGallery() : closeGallery(); }
+    else if (k === 'e') { $('#exportBtn').click(); }
+    else if (k === ' ') {
+      e.preventDefault();
+      avatar.setPose({ '--p-blink': '1' });
+      setTimeout(() => avatar.setPose({ '--p-blink': '0' }), 130);
+    }
+  });
+
+  // ---- boot ----
+  const hash = location.hash.match(/a=([^&]+)/);
+  const saved = hash && decodeState(hash[1]);
+  if (saved) { applyState(saved); toast('共有データを読み込みました'); }
+  else loadModel(currentModel);
+})();
+
+</script>
+</body>
+</html>

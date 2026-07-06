@@ -1,0 +1,1011 @@
+/* ============================================================
+   CSS VTuber — parametric avatar
+   Every part is drawn with pure CSS (no images) and driven by
+   custom properties. Two namespaces:
+     --s-*  style   (set by the control panel)
+     --p-*  pose    (set by tracking + idle animation, -1..1)
+   ============================================================ */
+
+.avatar {
+  /* ---- defaults (a model overrides the --s-* set) ---- */
+  --s-scale: 1;
+  --s-head-w: 230px;
+  --s-head-h: 250px;
+  --s-head-round: 46% 46% 44% 44% / 52% 52% 48% 48%;
+  --s-skin: #ffe3d3;
+  --s-skin-sh: #f3b9a4;
+  --s-skin-line: #e69e88;
+
+  --s-eye-w: 62px;
+  --s-eye-h: 70px;
+  --s-eye-gap: 36px;
+  --s-eye-y: 18px;
+  --s-eye-tilt: 0deg;
+  --s-iris: #6a5acd;
+  --s-iris2: #b8a9ff;
+  --s-eye-white: #ffffff;
+  --s-lash: #2b2233;
+
+  --s-brow-y: 0px;
+  --s-brow-thick: 9px;
+  --s-brow-w: 46px;
+  --s-brow-color: #6b4a3a;
+  --s-brow-angle: -4deg;
+
+  --s-nose-op: 0.35;
+
+  --s-mouth-w: 40px;
+  --s-mouth-y: 70px;
+  --s-mouth-color: #c4566a;
+  --s-mouth-in: #7d2638;
+
+  --s-blush: #ff9aa6;
+  --s-blush-op: 0.55;
+
+  --s-hair: #5b6da8;
+  --s-hair2: #46568a;
+  --s-hair-shine: #97a6dd;
+
+  --s-acc: #ff6f91;
+
+  /* ---- pose defaults ---- */
+  --p-yaw: 0;
+  --p-pitch: 0;
+  --p-roll: 0;
+  --p-blink: 0;
+  --p-blink-l: 0;
+  --p-blink-r: 0;
+  --p-mouth: 0;
+  --p-mouth-wide: 0;
+  --p-brow: 0;
+  --p-eye-x: 0;
+  --p-eye-y: 0;
+  --p-breath: 0;
+
+  position: relative;
+  width: calc(var(--s-head-w) * 1.7);
+  height: calc(var(--s-head-h) * 2.0);
+  transform: scale(var(--s-scale));
+  transform-origin: center bottom;
+  perspective: 900px;
+  filter: drop-shadow(0 24px 40px rgba(0,0,0,.35));
+}
+
+/* ---------- sparkles FX (optional, toggled by .fx-sparkle) ---------- */
+.av-sparkles { position: absolute; inset: -6%; z-index: 10; pointer-events: none; display: none; }
+.avatar.fx-sparkle .av-sparkles { display: block; }
+.av-sparkles i {
+  position: absolute;
+  left: var(--sx); top: var(--sy);
+  width: calc(16px * var(--ss, 1)); height: calc(16px * var(--ss, 1));
+  background: var(--s-acc);
+  clip-path: polygon(50% 0, 60% 40%, 100% 50%, 60% 60%, 50% 100%, 40% 60%, 0 50%, 40% 40%);
+  opacity: 0;
+  animation: sparkle-tw 2.6s ease-in-out infinite;
+  animation-delay: var(--sd, 0s);
+  filter: drop-shadow(0 0 4px var(--s-acc));
+}
+@keyframes sparkle-tw {
+  0%, 100% { opacity: 0; transform: scale(.4) rotate(0deg); }
+  50%      { opacity: .9; transform: scale(1) rotate(25deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .av-sparkles i { animation: none; opacity: .7; }
+}
+
+/* ---------- body / breathing ---------- */
+.av-body {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%) translateY(calc(var(--p-breath) * -4px));
+  transform-style: preserve-3d;
+}
+
+/* ---------- head: receives head rotation ---------- */
+.av-head {
+  position: relative;
+  width: var(--s-head-w);
+  height: var(--s-head-h);
+  transform-style: preserve-3d;
+  transform:
+    rotateY(calc(var(--p-yaw) * 24deg))
+    rotateX(calc(var(--p-pitch) * -17deg))
+    rotateZ(calc(var(--p-roll) * 14deg));
+  transition: transform .04s linear;
+  will-change: transform;
+}
+
+.av-face-base {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(120% 90% at 50% 14%, #fff6f0 0%, var(--s-skin) 42%, var(--s-skin-sh) 100%);
+  border-radius: var(--s-head-round);
+  box-shadow:
+    inset -16px -20px 34px rgba(0,0,0,.06),
+    inset 14px 10px 26px rgba(255,255,255,.45);
+}
+
+/* soft jaw/chin shading */
+.av-face-base::after {
+  content: "";
+  position: absolute;
+  left: 18%;
+  right: 18%;
+  bottom: 4%;
+  height: 30%;
+  background: radial-gradient(80% 100% at 50% 100%, var(--s-skin-sh) 0%, transparent 70%);
+  opacity: .5;
+  border-radius: 50%;
+}
+
+/* ---------- ears (human) ---------- */
+.av-ear {
+  position: absolute;
+  top: 44%;
+  width: 34px;
+  height: 50px;
+  background: radial-gradient(60% 60% at 60% 40%, var(--s-skin) 0%, var(--s-skin-sh) 100%);
+  border-radius: 50% 50% 40% 40%;
+  z-index: 1;
+}
+.av-ear.left { left: -16px; transform: rotate(-12deg); }
+.av-ear.right { right: -16px; transform: rotate(12deg); }
+
+/* ---------- face slots layer ---------- */
+.av-face {
+  position: absolute;
+  inset: 0;
+  transform: translateZ(8px);
+}
+
+/* smooth glide ONLY while an expression preset is applied (.expr-anim);
+   live tracking/idle stay snappy because the class is removed right after */
+.avatar.expr-anim .av-head { transition: transform .28s ease; }
+.avatar.expr-anim .av-mouth { transition: height .28s ease, width .28s ease; }
+.avatar.expr-anim .av-brow { transition: top .28s ease, transform .28s ease; }
+.avatar.expr-anim .av-lid { transition: height .2s ease; }
+.avatar.expr-anim .av-iris { transition: transform .28s ease; }
+
+/* ---------- eyebrows ---------- */
+.av-brow {
+  position: absolute;
+  top: calc(31% + var(--s-brow-y) - var(--p-brow) * 12px);
+  width: var(--s-brow-w);
+  height: var(--s-brow-thick);
+  background: var(--s-brow-color);
+  border-radius: 6px;
+  z-index: 4;
+}
+.av-brow.left {
+  left: calc(50% - var(--s-eye-gap) - var(--s-eye-w) - 4px);
+  transform: rotate(calc(var(--s-brow-angle) + var(--p-brow) * -6deg));
+}
+.av-brow.right {
+  right: calc(50% - var(--s-eye-gap) - var(--s-eye-w) - 4px);
+  transform: rotate(calc(var(--s-brow-angle) * -1 + var(--p-brow) * 6deg));
+}
+
+/* ---------- eyes ---------- */
+.av-eye {
+  position: absolute;
+  top: calc(38% + var(--s-eye-y));
+  width: var(--s-eye-w);
+  height: var(--s-eye-h);
+  z-index: 3;
+}
+.av-eye.left { left: calc(50% - var(--s-eye-gap) - var(--s-eye-w)); transform: rotate(calc(var(--s-eye-tilt) * -1)); }
+.av-eye.right { right: calc(50% - var(--s-eye-gap) - var(--s-eye-w)); transform: rotate(var(--s-eye-tilt)); }
+
+.av-eye-white {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(80% 70% at 50% 30%, #fff 0%, var(--s-eye-white) 60%, #e7eef6 100%);
+  border-radius: 50% 50% 48% 48% / 55% 55% 45% 45%;
+  overflow: hidden;
+  box-shadow: inset 0 6px 8px rgba(40,30,60,.18);
+}
+
+/* iris tracks gaze */
+.av-iris {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 76%;
+  height: 76%;
+  border-radius: 50%;
+  /* brighter centre, mid iris colour, then a dark limbal ring at the rim */
+  background:
+    radial-gradient(closest-side at 50% 36%,
+      var(--s-iris2) 0%,
+      var(--s-iris) 46%,
+      color-mix(in srgb, var(--s-iris) 62%, #000) 80%,
+      #1a1430 100%);
+  transform: translate(
+    calc(-50% + var(--p-eye-x) * 9px),
+    calc(-50% + var(--p-eye-y) * 7px));
+  box-shadow: inset 0 -4px 6px rgba(0,0,0,.35);
+}
+/* faint inner glow ring just inside the limbal ring */
+.av-iris::after {
+  content: "";
+  position: absolute;
+  inset: 12%;
+  border-radius: 50%;
+  box-shadow: inset 0 0 6px 1px color-mix(in srgb, var(--s-iris2) 60%, transparent);
+  pointer-events: none;
+}
+.av-pupil {
+  position: absolute;
+  left: 50%; top: 50%;
+  width: 42%; height: 42%;
+  background: #1a1330;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+.av-hl {
+  position: absolute;
+  width: 30%; height: 30%;
+  background: #fff;
+  border-radius: 50%;
+  top: 12%; left: 18%;
+  opacity: .95;
+}
+.av-hl.small {
+  width: 14%; height: 14%;
+  top: 52%; left: 56%;
+  opacity: .7;
+}
+
+/* upper lid for blinking — skin-colored shutter coming down */
+.av-lid {
+  position: absolute;
+  left: -8%;
+  width: 116%;
+  top: 0;
+  height: calc(var(--blink-amt, 0) * 108%);
+  background: linear-gradient(var(--s-skin) 70%, var(--s-skin-sh));
+  border-radius: 0 0 46% 46% / 0 0 70% 70%;
+  z-index: 5;
+  box-shadow: 0 2px 3px rgba(0,0,0,.15);
+}
+.av-eye.left  { --blink-amt: max(var(--p-blink), var(--p-blink-l)); }
+.av-eye.right { --blink-amt: max(var(--p-blink), var(--p-blink-r)); }
+
+/* aegyo-sal (涙袋) — a soft under-eye highlight for cuteness.
+   Disabled on the stylised dot/LED-eye models where it looks off. */
+.av-eye::after {
+  content: "";
+  position: absolute;
+  left: 8%; bottom: -9px;
+  width: 84%; height: 9px;
+  background: radial-gradient(closest-side, rgba(255,255,255,.65), transparent 75%);
+  border-radius: 50%;
+  pointer-events: none;
+}
+.model-robot .av-eye::after,
+.model-claude .av-eye::after,
+.model-slime .av-eye::after { display: none; }
+
+/* upper lash line */
+.av-lash {
+  position: absolute;
+  top: -3px; left: -6%;
+  width: 112%;
+  height: 12px;
+  background: var(--s-lash);
+  border-radius: 50% 50% 0 0 / 100% 100% 0 0;
+  z-index: 6;
+}
+
+/* ---------- nose ---------- */
+.av-nose {
+  position: absolute;
+  top: 56%; left: 50%;
+  width: 10px; height: 12px;
+  transform: translateX(-50%);
+  background: var(--s-skin-line);
+  opacity: var(--s-nose-op);
+  border-radius: 50%;
+  z-index: 2;
+}
+
+/* ---------- mouth ---------- */
+.av-mouth {
+  position: absolute;
+  top: calc(50% + var(--s-mouth-y));
+  left: 50%;
+  width: calc(var(--s-mouth-w) + var(--p-mouth-wide) * 18px);
+  height: calc(7px + var(--p-mouth) * 34px);
+  transform: translateX(-50%);
+  background: var(--s-mouth-color);
+  border-radius: 40% 40% 50% 50% / 30% 30% 80% 80%;
+  overflow: hidden;
+  z-index: 3;
+  transition: height .05s linear, width .05s linear;
+}
+.av-mouth-inner {
+  position: absolute;
+  inset: 18% 14% 0 14%;
+  background: var(--s-mouth-in);
+  border-radius: 0 0 50% 50%;
+}
+.av-mouth-inner::after { /* tongue hint */
+  content: "";
+  position: absolute;
+  left: 22%; right: 22%; bottom: 0; height: 45%;
+  background: #ee8898;
+  border-radius: 50% 50% 40% 40%;
+  opacity: calc(var(--p-mouth));
+}
+
+/* ---------- blush ---------- */
+.av-blush {
+  position: absolute;
+  top: 54%;
+  width: 40px; height: 22px;
+  background: radial-gradient(closest-side, var(--s-blush) 0%, transparent 75%);
+  opacity: var(--s-blush-op);
+  border-radius: 50%;
+  z-index: 2;
+}
+.av-blush.left { left: 8%; }
+.av-blush.right { right: 8%; }
+
+/* ---------- hair ---------- */
+.av-hair-back {
+  position: absolute;
+  left: 50%; top: -6%;
+  width: calc(var(--s-head-w) * 1.16);
+  height: calc(var(--s-head-h) * 1.18);
+  /* sits behind the face in a parallel plane and rotates WITH the
+     head (it's a child of .av-head), so no cross-plane clipping */
+  transform: translateX(-50%) translateZ(-30px);
+  background: linear-gradient(160deg, var(--s-hair) 0%, var(--s-hair2) 100%);
+  border-radius: 48% 48% 42% 42% / 46% 46% 60% 60%;
+  z-index: -1;
+}
+/* fringe: a forehead cap whose bottom edge dips into 3 soft bang
+   points (center part), all kept above the eyebrows */
+.av-hair-front {
+  position: absolute;
+  left: 50%; top: -10%;
+  width: calc(var(--s-head-w) * 1.05);
+  height: calc(var(--s-head-h) * 0.30);
+  transform: translateX(-50%) translateZ(20px);
+  background-image:
+    radial-gradient(55% 40% at 50% 24%, var(--s-hair-shine) 0%, transparent 62%),
+    linear-gradient(160deg, var(--s-hair) 0%, var(--s-hair2) 100%);
+  border-radius: 50% 50% 44% 44% / 78% 78% 70% 70%;
+  z-index: 7;
+  pointer-events: none;
+  box-shadow: inset 0 -5px 9px rgba(0,0,0,.10);
+}
+/* two short bang points dipping from the cap, leaving a center part */
+.av-hair-front::before,
+.av-hair-front::after {
+  content: "";
+  position: absolute;
+  top: 56%;
+  width: 30%; height: 64%;
+  background: linear-gradient(165deg, var(--s-hair) 0%, var(--s-hair2) 100%);
+  filter: drop-shadow(0 4px 3px rgba(0,0,0,.10));
+}
+.av-hair-front::before { /* left of part */
+  left: 20%;
+  border-radius: 60% 40% 48% 52% / 40% 30% 70% 80%;
+  transform: rotate(7deg);
+  transform-origin: top center;
+}
+.av-hair-front::after { /* right of part */
+  right: 20%;
+  border-radius: 40% 60% 52% 48% / 30% 40% 80% 70%;
+  transform: rotate(-7deg);
+  transform-origin: top center;
+}
+
+/* accessory mount (model extras) */
+.av-acc { position: absolute; inset: 0; z-index: 8; pointer-events: none; }
+
+/* ============================================================
+   Hair styles — extra hair pieces behind the face, shown by a
+   mutually-exclusive .hair-* class on the avatar root.
+   ============================================================ */
+.av-hair-tails { position: absolute; inset: 0; transform: translateZ(-18px); }
+.av-hair-tails .tail { position: absolute; display: none;
+  background: linear-gradient(160deg, var(--s-hair), var(--s-hair2)); }
+
+/* twin-tails */
+.avatar.hair-twintails .av-hair-tails .tail.l,
+.avatar.hair-twintails .av-hair-tails .tail.r { display: block; }
+.avatar.hair-twintails .tail.l,
+.avatar.hair-twintails .tail.r {
+  top: 8%; width: 64px; height: calc(var(--s-head-h) * 0.92);
+  border-radius: 50% 50% 46% 46% / 22% 22% 60% 60%;
+  box-shadow: inset -6px 0 10px rgba(0,0,0,.12);
+}
+.avatar.hair-twintails .tail.l { left: -34px; transform: rotate(8deg); }
+.avatar.hair-twintails .tail.r { right: -34px; transform: rotate(-8deg); }
+/* hair tie */
+.avatar.hair-twintails .tail.l::before,
+.avatar.hair-twintails .tail.r::before {
+  content: ""; position: absolute; top: 4%; left: 50%; width: 70%; height: 14px;
+  transform: translateX(-50%); background: var(--s-acc); border-radius: 8px;
+}
+
+/* ponytail (single, behind, swept to one side) */
+.avatar.hair-ponytail .av-hair-tails .tail.pony { display: block; }
+.avatar.hair-ponytail .tail.pony {
+  top: 4%; right: -28px; width: 70px; height: calc(var(--s-head-h) * 1.0);
+  border-radius: 48% 52% 40% 60% / 20% 20% 70% 80%;
+  transform: rotate(-10deg);
+}
+.avatar.hair-ponytail .tail.pony::before {
+  content: ""; position: absolute; top: 2%; left: 40%; width: 60%; height: 14px;
+  background: var(--s-acc); border-radius: 8px;
+}
+
+/* long / short tweak the back hair height */
+.avatar.hair-long  .av-hair-back { height: calc(var(--s-head-h) * 1.7); border-radius: 48% 48% 46% 46% / 40% 40% 58% 58%; }
+.avatar.hair-short .av-hair-back { height: calc(var(--s-head-h) * 0.92); }
+
+/* ============================================================
+   Toggleable accessories — always in the DOM, shown when the
+   avatar root carries the matching .acc-* class. They live inside
+   .av-head so they rotate with the head.
+   ============================================================ */
+.av-extras { position: absolute; inset: 0; z-index: 9; pointer-events: none; transform: translateZ(22px); }
+.av-extras .acc { position: absolute; inset: 0; display: none; }
+.avatar.acc-ahoge      .acc-ahoge,
+.avatar.acc-glasses    .acc-glasses,
+.avatar.acc-headphones .acc-headphones,
+.avatar.acc-ribbon     .acc-ribbon,
+.avatar.acc-hat        .acc-hat,
+.avatar.acc-collar     .acc-collar { display: block; }
+
+/* collar / clothing hint at the base of the head (turtleneck-style,
+   rotates with the head so it reads like a worn collar) */
+.acc-collar .neck {
+  position: absolute; left: 50%; bottom: 2%;
+  width: 40%; height: 14%;
+  transform: translateX(-50%);
+  background: var(--s-skin-sh);
+  border-radius: 0 0 40% 40% / 0 0 100% 100%;
+}
+.acc-collar .wear {
+  position: absolute; left: 50%; bottom: -12%;
+  width: 88%; height: 24%;
+  transform: translateX(-50%);
+  background: linear-gradient(160deg, var(--s-acc), color-mix(in srgb, var(--s-acc) 60%, #000));
+  border-radius: 46% 46% 34% 34% / 80% 80% 46% 46%;
+  box-shadow: inset 0 6px 10px rgba(255,255,255,.25);
+}
+
+/* ahoge — single curly hair antenna (scoped to the extras element so
+   the rule never leaks onto the avatar root which carries .acc-ahoge) */
+.av-extras .acc-ahoge::before {
+  content: ""; position: absolute; left: 48%; top: -16%;
+  width: 10px; height: 64px;
+  background: linear-gradient(var(--s-hair), var(--s-hair2));
+  border-radius: 60% 40% 50% 50%;
+  transform: rotate(14deg);
+  transform-origin: bottom center;
+  box-shadow: 0 0 0 0 transparent;
+  clip-path: polygon(40% 100%, 60% 100%, 80% 40%, 55% 0%, 95% 30%, 50% -5%, 5% 35%);
+}
+
+/* glasses */
+.acc-glasses .lens {
+  position: absolute; top: calc(38% + var(--s-eye-y) - 4px);
+  width: calc(var(--s-eye-w) + 16px); height: calc(var(--s-eye-h) + 4px);
+  border: 4px solid #3a3f4c; border-radius: 46% 46% 48% 48% / 50%;
+  background: radial-gradient(120% 120% at 30% 20%, rgba(255,255,255,.35), rgba(180,210,255,.08));
+  box-shadow: 0 2px 4px rgba(0,0,0,.2);
+}
+.acc-glasses .lens.l { left: calc(50% - var(--s-eye-gap) - var(--s-eye-w) - 8px); }
+.acc-glasses .lens.r { right: calc(50% - var(--s-eye-gap) - var(--s-eye-w) - 8px); }
+.acc-glasses .bridge {
+  position: absolute; top: calc(44% + var(--s-eye-y));
+  left: 50%; width: calc(var(--s-eye-gap) * 2 - 4px); height: 4px;
+  transform: translateX(-50%); background: #3a3f4c; border-radius: 4px;
+}
+
+/* headphones */
+.acc-headphones .band {
+  position: absolute; left: 50%; top: -14%;
+  width: calc(var(--s-head-w) * 1.06); height: calc(var(--s-head-h) * 0.62);
+  transform: translateX(-50%);
+  border: 12px solid #2c3440; border-bottom: none;
+  border-radius: 50% 50% 0 0; box-sizing: border-box;
+}
+.acc-headphones .cup {
+  position: absolute; top: 42%;
+  width: 42px; height: 60px; background: linear-gradient(#3a4250, #232a35);
+  border-radius: 14px; box-shadow: inset 0 0 8px rgba(0,0,0,.5);
+}
+.acc-headphones .cup::after {
+  content: ""; position: absolute; inset: 8px;
+  border-radius: 10px; background: var(--s-acc); opacity: .5;
+}
+.acc-headphones .cup.l { left: -22px; }
+.acc-headphones .cup.r { right: -22px; }
+
+/* ribbon (top-left bow) */
+.acc-ribbon .loop {
+  position: absolute; top: -6%; width: 36px; height: 30px;
+  background: radial-gradient(closest-side at 60% 40%, color-mix(in srgb, var(--s-acc) 80%, #fff), var(--s-acc));
+  border-radius: 60% 40% 50% 50%;
+}
+.acc-ribbon .loop.l { left: 22%; transform: rotate(-26deg); }
+.acc-ribbon .loop.r { left: 34%; transform: rotate(26deg); }
+.acc-ribbon .knot {
+  position: absolute; top: 0; left: 30%; width: 16px; height: 16px;
+  background: var(--s-acc); border-radius: 50%;
+}
+
+/* hat (beanie) */
+.acc-hat .brim {
+  position: absolute; left: 50%; top: -6%;
+  width: calc(var(--s-head-w) * 1.02); height: 30px;
+  transform: translateX(-50%);
+  background: color-mix(in srgb, var(--s-acc) 70%, #2a2a30);
+  border-radius: 16px;
+}
+.acc-hat .top {
+  position: absolute; left: 50%; top: -28%;
+  width: calc(var(--s-head-w) * 0.86); height: calc(var(--s-head-h) * 0.34);
+  transform: translateX(-50%);
+  background: linear-gradient(160deg, var(--s-acc), color-mix(in srgb, var(--s-acc) 60%, #000));
+  border-radius: 50% 50% 30% 30% / 70% 70% 40% 40%;
+}
+.acc-hat .pom {
+  position: absolute; left: 50%; top: -34%;
+  width: 30px; height: 30px; transform: translateX(-50%);
+  background: radial-gradient(closest-side, #fff, #d7d7e0);
+  border-radius: 50%;
+}
+
+/* ============================================================
+   Idle motion is driven from JS (app.js) by writing the --p-*
+   pose vars on a rAF loop, so it blends seamlessly with live
+   tracking instead of fighting the transform stack.
+   ============================================================ */
+
+/* Accessibility: honour reduced-motion by stopping the looping
+   idle CSS animations (the JS idle loop also checks this). */
+@media (prefers-reduced-motion: reduce) {
+  .model-slime .av-face-base,
+  .model-ghost .av-body,
+  .model-robot .robo-antenna i,
+  .bear-ear, .panda-ear, .cat-ear, .fox-ear, .rabbit-ear {
+    animation: none !important;
+  }
+}
+
+/* ============================================================
+   MODEL: bear  (round head, ears, snout)
+   ============================================================ */
+.model-bear .av-ear { display: none; }       /* hide human ears */
+.model-bear .av-hair-front { display: none; } /* no fringe */
+.model-bear .av-hair-back { display: none; }
+.model-bear .av-lash { opacity: .5; height: 8px; }
+
+.model-bear .bear-ear {
+  position: absolute;
+  top: -22px;
+  width: 78px; height: 78px;
+  border-radius: 50%;
+  background: radial-gradient(60% 60% at 50% 40%, var(--s-skin) 0%, var(--s-skin-sh) 100%);
+  z-index: 0;
+}
+.model-bear .bear-ear::after {
+  content: ""; position: absolute; inset: 26%;
+  background: var(--s-skin-line); border-radius: 50%; opacity: .55;
+}
+.model-bear .bear-ear.left { left: -6px; }
+.model-bear .bear-ear.right { right: -6px; }
+
+.model-bear .bear-snout {
+  position: absolute;
+  left: 50%; top: 58%;
+  width: 96px; height: 74px;
+  transform: translateX(-50%);
+  background: radial-gradient(70% 70% at 50% 35%, #f1e2cf 0%, #d9c2a4 100%);
+  border-radius: 50%;
+  z-index: 1;
+}
+.model-bear .bear-nose {
+  position: absolute;
+  left: 50%; top: 16%;
+  width: 34px; height: 24px;
+  transform: translateX(-50%);
+  background: #3a2a1c;
+  border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+}
+/* bear mouth + nose sit on top of the snout */
+.model-bear .av-mouth { z-index: 3; }
+.model-bear .av-nose { display: none; }
+
+/* ============================================================
+   MODEL: claude  (round mascot, dot eyes, brand coral, burst halo)
+   ============================================================ */
+.model-claude .av-ear { display: none; }
+.model-claude .av-hair-front { display: none; }
+.model-claude .av-hair-back { display: none; }
+.model-claude .av-lash { display: none; }
+.model-claude .av-brow { display: none; }
+.model-claude .av-nose { display: none; }
+.model-claude .av-eye-white { box-shadow: none; }
+.model-claude .av-iris { width: 100%; height: 100%; box-shadow: none; }
+.model-claude .av-pupil { width: 0; height: 0; }
+.model-claude .av-hl { width: 26%; height: 26%; top: 10%; left: 16%; opacity: .85; }
+.model-claude .av-hl.small { display: none; }
+.model-claude .av-eye-white { border-radius: 50%; background: transparent; }
+.model-claude .av-mouth {
+  border-radius: 0 0 60% 60% / 0 0 100% 100%;
+}
+
+/* ============================================================
+   MODEL: cat  (triangular ears, whiskers, slit pupils, nose)
+   ============================================================ */
+.model-cat .av-ear,
+.model-cat .av-hair-front,
+.model-cat .av-hair-back,
+.model-cat .av-brow,
+.model-cat .av-nose { display: none; }
+.model-cat .av-lash { opacity: .35; height: 7px; }
+/* slit pupils */
+.model-cat .av-pupil {
+  width: 24%; height: 70%;
+  border-radius: 50%;
+  background: #15321f;
+}
+.model-cat .cat-ear {
+  position: absolute; top: -38px;
+  width: 0; height: 0;
+  border-left: 40px solid transparent;
+  border-right: 40px solid transparent;
+  border-bottom: 64px solid var(--s-skin-sh);
+  z-index: 0;
+}
+.model-cat .cat-ear::after {
+  content: ""; position: absolute; left: -22px; top: 22px;
+  width: 0; height: 0;
+  border-left: 22px solid transparent;
+  border-right: 22px solid transparent;
+  border-bottom: 36px solid #ffc2cb;
+}
+.model-cat .cat-ear.left { left: 16px; transform: rotate(-16deg); }
+.model-cat .cat-ear.right { right: 16px; transform: rotate(16deg); }
+.model-cat .cat-nose {
+  position: absolute; left: 50%; top: 58%;
+  width: 18px; height: 13px; transform: translateX(-50%);
+  background: #e58aa0; border-radius: 50% 50% 50% 50% / 40% 40% 100% 100%;
+  z-index: 4;
+}
+.model-cat .cat-whiskers {
+  position: absolute; top: 60%; width: 70px; height: 40px; z-index: 3;
+}
+.model-cat .cat-whiskers.left { left: -42px; }
+.model-cat .cat-whiskers.right { right: -42px; transform: scaleX(-1); }
+.model-cat .cat-whiskers i {
+  position: absolute; left: 0; width: 64px; height: 2px;
+  background: linear-gradient(90deg, transparent, #b9a290 30%);
+  border-radius: 2px; transform-origin: left center;
+}
+.model-cat .cat-whiskers i:nth-child(1) { top: 6px; transform: rotate(-12deg); }
+.model-cat .cat-whiskers i:nth-child(2) { top: 18px; }
+.model-cat .cat-whiskers i:nth-child(3) { top: 30px; transform: rotate(12deg); }
+
+/* ============================================================
+   MODEL: robot  (antenna, panels, LED eyes, grille mouth, bolts)
+   ============================================================ */
+.model-robot .av-ear,
+.model-robot .av-hair-front,
+.model-robot .av-hair-back,
+.model-robot .av-brow,
+.model-robot .av-nose,
+.model-robot .av-lash { display: none; }
+.model-robot .av-face-base {
+  box-shadow:
+    inset -10px -12px 22px rgba(0,0,0,.18),
+    inset 10px 8px 18px rgba(255,255,255,.6);
+  border: 3px solid #8d9bb0;
+}
+/* glowing LED eyes */
+.model-robot .av-eye-white {
+  border-radius: 14px;
+  box-shadow: inset 0 0 8px #000, 0 0 12px var(--s-iris);
+}
+.model-robot .av-iris {
+  width: 80%; height: 70%; border-radius: 8px;
+  background: radial-gradient(closest-side, var(--s-iris2), var(--s-iris));
+  box-shadow: 0 0 10px var(--s-iris);
+}
+.model-robot .av-pupil { width: 0; height: 0; }
+.model-robot .av-hl { width: 24%; height: 30%; border-radius: 3px; }
+.model-robot .av-mouth {
+  border-radius: 6px;
+  background:
+    repeating-linear-gradient(90deg, var(--s-mouth-color) 0 4px, transparent 4px 8px);
+  box-shadow: 0 0 8px var(--s-mouth-color);
+}
+.model-robot .av-mouth-inner { display: none; }
+.model-robot .robo-antenna {
+  position: absolute; left: 50%; top: -34px; width: 4px; height: 34px;
+  transform: translateX(-50%); background: #8d9bb0; z-index: 0;
+}
+.model-robot .robo-antenna i {
+  position: absolute; top: -12px; left: 50%; width: 16px; height: 16px;
+  transform: translateX(-50%); background: var(--s-acc); border-radius: 50%;
+  box-shadow: 0 0 12px var(--s-acc);
+  animation: robo-blink 1.8s ease-in-out infinite;
+}
+@keyframes robo-blink { 0%,100%{opacity:1;} 50%{opacity:.35;} }
+.model-robot .robo-panel {
+  position: absolute; top: 38%; width: 26px; height: 70px;
+  background: linear-gradient(var(--s-skin-sh), #6f7d92);
+  border-radius: 8px; z-index: 0;
+}
+.model-robot .robo-panel.left { left: -16px; }
+.model-robot .robo-panel.right { right: -16px; }
+.model-robot .robo-bolt {
+  position: absolute; width: 12px; height: 12px; border-radius: 50%;
+  background: radial-gradient(closest-side, #eef3fa, #8d9bb0);
+  box-shadow: inset 0 0 0 2px #6f7d92; z-index: 4;
+}
+.model-robot .robo-bolt.tl { left: 14px; top: 12px; }
+.model-robot .robo-bolt.tr { right: 14px; top: 12px; }
+.model-robot .robo-bolt.bl { left: 14px; bottom: 12px; }
+.model-robot .robo-bolt.br { right: 14px; bottom: 12px; }
+
+/* ============================================================
+   MODEL: fox  (pointed orange ears w/ white inner, white muzzle)
+   ============================================================ */
+.model-fox .av-ear,
+.model-fox .av-hair-front,
+.model-fox .av-hair-back,
+.model-fox .av-brow,
+.model-fox .av-nose { display: none; }
+.model-fox .av-lash { opacity: .4; height: 7px; }
+.model-fox .fox-ear {
+  position: absolute; top: -40px; width: 0; height: 0;
+  border-left: 44px solid transparent; border-right: 44px solid transparent;
+  border-bottom: 72px solid var(--s-skin-sh); z-index: 0;
+}
+.model-fox .fox-ear::after {
+  content: ""; position: absolute; left: -20px; top: 28px;
+  width: 0; height: 0; border-left: 20px solid transparent;
+  border-right: 20px solid transparent; border-bottom: 38px solid #fff3e8;
+}
+.model-fox .fox-ear.left { left: 4px; transform: rotate(-18deg); }
+.model-fox .fox-ear.right { right: 4px; transform: rotate(18deg); }
+.model-fox .fox-muzzle {
+  position: absolute; left: 50%; top: 56%; width: 110px; height: 86px;
+  transform: translateX(-50%);
+  background: radial-gradient(70% 70% at 50% 30%, #fff7f0 0%, #f3e2d4 100%);
+  border-radius: 50% 50% 50% 50% / 40% 40% 70% 70%; z-index: 1;
+}
+.model-fox .fox-nose {
+  position: absolute; left: 50%; top: 8%; width: 26px; height: 18px;
+  transform: translateX(-50%); background: #3a2418;
+  border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+}
+.model-fox .av-mouth { z-index: 3; }
+
+/* ============================================================
+   MODEL: panda  (black round ears, black eye patches, black nose)
+   ============================================================ */
+.model-panda .av-ear,
+.model-panda .av-hair-front,
+.model-panda .av-hair-back,
+.model-panda .av-brow { display: none; }
+.model-panda .panda-ear {
+  position: absolute; top: -24px; width: 80px; height: 80px;
+  background: radial-gradient(60% 60% at 50% 40%, #2c2926, #181614);
+  border-radius: 50%; z-index: 0;
+}
+.model-panda .panda-ear.left { left: -8px; }
+.model-panda .panda-ear.right { right: -8px; }
+/* black eye patches behind the eyes */
+.model-panda .panda-patch {
+  position: absolute; top: calc(30% + var(--s-eye-y)); width: 76px; height: 92px;
+  background: radial-gradient(60% 60% at 50% 40%, #2c2926, #181614);
+  border-radius: 50% 50% 46% 46% / 56% 56% 44% 44%; z-index: 2;
+  transform: rotate(var(--patch-rot, 0deg));
+}
+.model-panda .panda-patch.left { left: calc(50% - var(--s-eye-gap) - var(--s-eye-w) - 18px); --patch-rot: 12deg; }
+.model-panda .panda-patch.right { right: calc(50% - var(--s-eye-gap) - var(--s-eye-w) - 18px); --patch-rot: -12deg; }
+.model-panda .av-eye { z-index: 3; }
+.model-panda .av-nose { width: 22px; height: 14px; background: #22201e; opacity: 1;
+  border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%; top: 52%; }
+
+/* ============================================================
+   MODEL: slime  (translucent jelly blob, jiggle, big shine)
+   ============================================================ */
+.model-slime .av-ear,
+.model-slime .av-hair-front,
+.model-slime .av-hair-back,
+.model-slime .av-brow,
+.model-slime .av-nose,
+.model-slime .av-lash { display: none; }
+.model-slime .av-face-base {
+  background:
+    radial-gradient(60% 50% at 38% 24%, #ffffffcc 0%, transparent 38%),
+    radial-gradient(120% 100% at 50% 20%, var(--s-skin) 0%, var(--s-skin-sh) 100%);
+  box-shadow:
+    inset -18px -22px 40px rgba(0,0,0,.10),
+    inset 16px 14px 30px rgba(255,255,255,.55);
+  animation: slime-jiggle 2.6s ease-in-out infinite;
+}
+@keyframes slime-jiggle {
+  0%,100% { transform: scale(1, 1); }
+  30%     { transform: scale(1.04, 0.96); }
+  60%     { transform: scale(0.97, 1.03); }
+}
+.model-slime .av-iris { box-shadow: none; }
+.model-slime .av-pupil { width: 0; height: 0; }
+.model-slime .slime-shine {
+  position: absolute; left: 26%; top: 16%;
+  width: 40px; height: 22px; background: #ffffffcc;
+  border-radius: 50%; transform: rotate(-20deg); filter: blur(1px); z-index: 5;
+}
+
+/* ============================================================
+   MODEL: ghost  (pale floaty body, wavy skirt, soft eyes)
+   ============================================================ */
+.model-ghost .av-ear,
+.model-ghost .av-hair-front,
+.model-ghost .av-hair-back,
+.model-ghost .av-brow,
+.model-ghost .av-nose,
+.model-ghost .av-lash { display: none; }
+.model-ghost .av-body { animation: ghost-float 3.4s ease-in-out infinite; }
+@keyframes ghost-float {
+  0%,100% { transform: translateX(-50%) translateY(0); }
+  50%     { transform: translateX(-50%) translateY(-10px); }
+}
+.model-ghost .av-face-base {
+  box-shadow:
+    inset -14px -16px 30px rgba(80,70,140,.10),
+    inset 14px 12px 24px rgba(255,255,255,.7);
+}
+/* wavy bottom skirt made of overlapping bumps */
+.model-ghost .ghost-skirt {
+  position: absolute; left: 50%; bottom: -6%;
+  width: var(--s-head-w); height: 40px; transform: translateX(-50%);
+  display: flex; justify-content: center; z-index: -1;
+}
+.model-ghost .ghost-skirt i {
+  width: 25%; height: 44px;
+  background: linear-gradient(var(--s-skin), var(--s-skin-sh));
+  border-radius: 0 0 50% 50%;
+  margin-top: -8px;
+}
+
+/* ============================================================
+   Idle ear twitches — subtle periodic "perk" so animal models
+   feel alive. Pure CSS so they also play in standalone exports.
+   Base rotation is baked into each keyframe set so it doesn't
+   clobber the ear's resting angle.
+   ============================================================ */
+.model-bear .bear-ear,
+.model-panda .panda-ear { transform-origin: bottom center; }
+.model-bear .bear-ear.left  { animation: ear-round-l 6s ease-in-out infinite; }
+.model-bear .bear-ear.right { animation: ear-round-r 7s ease-in-out infinite; }
+.model-panda .panda-ear.left  { animation: ear-round-l 6.5s ease-in-out infinite; }
+.model-panda .panda-ear.right { animation: ear-round-r 5.5s ease-in-out infinite; }
+@keyframes ear-round-l { 0%,90%,100%{transform:rotate(0deg)} 95%{transform:rotate(-8deg)} }
+@keyframes ear-round-r { 0%,88%,100%{transform:rotate(0deg)} 94%{transform:rotate(8deg)} }
+
+.model-cat .cat-ear,
+.model-fox .fox-ear,
+.model-rabbit .rabbit-ear { transform-origin: bottom center; }
+.model-cat .cat-ear.left  { animation: cat-ear-l 5.5s ease-in-out infinite; }
+.model-cat .cat-ear.right { animation: cat-ear-r 6.5s ease-in-out infinite; }
+@keyframes cat-ear-l { 0%,90%,100%{transform:rotate(-16deg)} 95%{transform:rotate(-26deg)} }
+@keyframes cat-ear-r { 0%,88%,100%{transform:rotate(16deg)} 94%{transform:rotate(26deg)} }
+.model-fox .fox-ear.left  { animation: fox-ear-l 6s ease-in-out infinite; }
+.model-fox .fox-ear.right { animation: fox-ear-r 7s ease-in-out infinite; }
+@keyframes fox-ear-l { 0%,91%,100%{transform:rotate(-18deg)} 96%{transform:rotate(-27deg)} }
+@keyframes fox-ear-r { 0%,89%,100%{transform:rotate(18deg)} 95%{transform:rotate(27deg)} }
+.model-rabbit .rabbit-ear.left  { animation: rab-ear-l 5s ease-in-out infinite; }
+.model-rabbit .rabbit-ear.right { animation: rab-ear-r 6s ease-in-out infinite; }
+@keyframes rab-ear-l { 0%,86%,100%{transform:rotate(-12deg)} 92%{transform:rotate(-19deg)} }
+@keyframes rab-ear-r { 0%,84%,100%{transform:rotate(12deg)} 90%{transform:rotate(19deg)} }
+
+/* ============================================================
+   MODEL: rabbit  (tall ears w/ pink inner, pink nose)
+   ============================================================ */
+.model-rabbit .av-ear,
+.model-rabbit .av-hair-front,
+.model-rabbit .av-hair-back,
+.model-rabbit .av-brow,
+.model-rabbit .av-nose { display: none; }
+.model-rabbit .av-lash { opacity: .4; height: 7px; }
+.model-rabbit .rabbit-ear {
+  position: absolute; top: -96px;
+  width: 42px; height: 120px;
+  background: linear-gradient(var(--s-skin), var(--s-skin-sh));
+  border-radius: 50% 50% 44% 44% / 40% 40% 60% 60%;
+  z-index: 0;
+}
+.model-rabbit .rabbit-ear i {
+  position: absolute; inset: 18% 24%;
+  background: #ffc2da; border-radius: 50% 50% 44% 44% / 40% 40% 60% 60%;
+}
+.model-rabbit .rabbit-ear.left { left: 30px; transform: rotate(-12deg); transform-origin: bottom center; }
+.model-rabbit .rabbit-ear.right { right: 30px; transform: rotate(12deg); transform-origin: bottom center; }
+.model-rabbit .rabbit-nose {
+  position: absolute; left: 50%; top: 56%;
+  width: 16px; height: 11px; transform: translateX(-50%);
+  background: #e57aa0; border-radius: 50% 50% 50% 50% / 40% 40% 100% 100%; z-index: 4;
+}
+
+/* ============================================================
+   MODEL: dragon  (horns, cheek fins, snout, slit pupils)
+   ============================================================ */
+.model-dragon .av-ear,
+.model-dragon .av-hair-front,
+.model-dragon .av-hair-back,
+.model-dragon .av-brow,
+.model-dragon .av-nose { display: none; }
+.model-dragon .av-lash { opacity: .35; height: 6px; }
+.model-dragon .av-pupil { width: 26%; height: 72%; border-radius: 50%; background: #2a1a08; }
+.model-dragon .dragon-horn {
+  position: absolute; top: -36px; width: 26px; height: 56px;
+  background: linear-gradient(160deg, #f3ead0, #c9b78a);
+  border-radius: 50% 50% 40% 40% / 70% 70% 30% 30%; z-index: 0;
+}
+.model-dragon .dragon-horn.left { left: 30px; transform: rotate(-22deg); }
+.model-dragon .dragon-horn.right { right: 30px; transform: rotate(22deg); }
+.model-dragon .dragon-fin {
+  position: absolute; top: 40%; width: 30px; height: 56px;
+  background: linear-gradient(var(--s-skin), var(--s-skin-sh));
+  z-index: 0;
+}
+.model-dragon .dragon-fin.left { left: -18px; border-radius: 60% 0 60% 60% / 50% 0 50% 50%; transform: rotate(-10deg); }
+.model-dragon .dragon-fin.right { right: -18px; border-radius: 0 60% 60% 60% / 0 50% 50% 50%; transform: rotate(10deg); }
+.model-dragon .dragon-snout {
+  position: absolute; left: 50%; top: 58%; width: 78px; height: 56px;
+  transform: translateX(-50%);
+  background: radial-gradient(70% 70% at 50% 30%, var(--s-skin) 0%, var(--s-skin-sh) 100%);
+  border-radius: 50% 50% 50% 50% / 40% 40% 70% 70%; z-index: 1;
+}
+.model-dragon .dragon-snout i {
+  position: absolute; top: 26%; width: 8px; height: 11px;
+  background: #1f6b48; border-radius: 50%;
+}
+.model-dragon .dragon-snout i:nth-child(1) { left: 26%; }
+.model-dragon .dragon-snout i:nth-child(2) { right: 26%; }
+.model-dragon .av-mouth { z-index: 3; }
+
+/* Anthropic-style sunburst behind the head */
+.model-claude .claude-burst {
+  position: absolute;
+  left: 50%; top: 50%;
+  width: calc(var(--s-head-w) * 1.5);
+  height: calc(var(--s-head-w) * 1.5);
+  transform: translate(-50%, -50%);
+  z-index: -2;
+  background:
+    conic-gradient(from 0deg,
+      var(--s-acc) 0deg 6deg, transparent 6deg 30deg,
+      var(--s-acc) 30deg 36deg, transparent 36deg 60deg,
+      var(--s-acc) 60deg 66deg, transparent 66deg 90deg,
+      var(--s-acc) 90deg 96deg, transparent 96deg 120deg,
+      var(--s-acc) 120deg 126deg, transparent 126deg 150deg,
+      var(--s-acc) 150deg 156deg, transparent 156deg 180deg,
+      var(--s-acc) 180deg 186deg, transparent 186deg 210deg,
+      var(--s-acc) 210deg 216deg, transparent 216deg 240deg,
+      var(--s-acc) 240deg 246deg, transparent 246deg 270deg,
+      var(--s-acc) 270deg 276deg, transparent 276deg 300deg,
+      var(--s-acc) 300deg 306deg, transparent 306deg 330deg,
+      var(--s-acc) 330deg 336deg, transparent 336deg 360deg);
+  opacity: .4;
+  border-radius: 50%;
+  -webkit-mask: radial-gradient(circle, transparent 38%, #000 39%, #000 70%, transparent 72%);
+          mask: radial-gradient(circle, transparent 38%, #000 39%, #000 70%, transparent 72%);
+}
