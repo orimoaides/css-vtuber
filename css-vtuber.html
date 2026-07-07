@@ -691,17 +691,28 @@ body.obs #panel{display:none}
 #panel .act.primary:hover{background:#e0630e}
 
 /* ================= 変身スタジオ (henshin) ================= */
-/* 実写カメラ表示レイヤー。トラッキング用 #camVid とは別。ステージ全面・ミラー表示 */
+/* ===== 融合アーキテクチャ: 3レイヤー常時合成 =====
+   下=実写カメラ #camView / 中=トラッキング駆動 #model / 上=FX #fxCanvas。
+   「へんしん」は排他切替でなく、各レイヤーの不透明度・フィルタの連続変化として再定義。
+   顔トラッキング(camLoop) と アイドルモーション は全モードで #model を駆動し続ける。 */
 #camView{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;
-  transform:scaleX(-1);z-index:0;opacity:0;pointer-events:none;background:#12100e;
-  transition:opacity .55s ease, filter .5s ease}
-#stage.show-real #camView{opacity:1}
-/* デバッグ用の疑似「実写」背景 (カメラ無しでも変身シーケンスを確認できる。表示はshow-real時のみ) */
+  transform:scaleX(-1);z-index:0;opacity:0;pointer-events:none;
+  transition:opacity .6s ease, filter .6s ease}
+/* デバッグ用の疑似「実写」背景 (カメラ無しでも融合/変身を確認できる) */
 #camView.debugbg{background:
   radial-gradient(58% 78% at 50% 34%,#3d4d58 0%,#232a30 62%,#14181d 100%)}
-/* 実写モードではモデルを隠す (変身アニメ中は別途アニメが上書き) */
-#stage.show-real #model{opacity:0}
-#model{transition:opacity .45s ease}
+#model{transition:opacity .5s ease, filter .5s ease}
+
+/* --- モード別レイヤー比率 (連続変化はtransitionが担う) --- */
+/* 実写: カメラ100%・M1非表示 (トラッキングは裏で生き続ける) */
+#stage.mode-real   #camView{opacity:1}
+#stage.mode-real   #model{opacity:0}
+/* 融合(既定): カメラを沈めた上にトラッキングM1を重ねる = CSS Vtuberの本領 */
+#stage.mode-fusion #camView{opacity:.5;filter:saturate(.72) brightness(.66) contrast(1.03)}
+#stage.mode-fusion #model{opacity:1}
+/* フル: M1主体・カメラは気配だけ */
+#stage.mode-full   #camView{opacity:.12;filter:saturate(.4) brightness(.5)}
+#stage.mode-full   #model{opacity:1}
 
 /* 白フラッシュ */
 #flash{position:absolute;inset:0;background:#fff;opacity:0;z-index:40;
@@ -807,6 +818,13 @@ body.obs #panel{display:none}
 #henshinBar button:hover{background:#F2B33C}
 #henshinBar button:active{transform:translateY(3px);box-shadow:0 1px 0 #292826}
 #henshinBar .fire{background:#E85D26;color:#fff}
+/* モード表示バッジ (実写 / 融合 / フル) */
+#modeTag{align-self:center;font:800 13px/1 "Hiragino Sans",sans-serif;color:#F4ECD8;
+  background:#5E7E7A;border:3px solid #292826;border-radius:11px;padding:8px 11px;
+  box-shadow:0 4px 0 #292826;letter-spacing:.06em}
+#modeTag.m-real{background:#292826}
+#modeTag.m-fusion{background:#E85D26}
+#modeTag.m-full{background:#5E7E7A}
 #henshinBar .fire:hover{background:#f2723d}
 #henshinBar .k{opacity:.55;font-weight:600;margin-left:5px;font-size:11px}
 
@@ -897,6 +915,7 @@ body.obs #panel{display:none}
   </div>
 
   <div id="henshinBar">
+    <span id="modeTag" class="m-fusion">融合</span>
     <button id="hbHenshin">へんしん<span class="k">H</span></button>
     <button id="hbFire" class="fire">オリモダンテ<span class="k">F</span></button>
     <button id="hbEvo">しんか<span class="k">E</span></button>
@@ -907,7 +926,7 @@ body.obs #panel{display:none}
 
 <aside id="panel">
   <h1>髪型エディタ</h1>
-  <p class="hint">髪パーツをクリックで選択、そのままドラッグで移動。Pキーでパネル切替 / Hキーでへんしん / ?obs で配信モード / ?debug=1 でマウス=手</p>
+  <p class="hint">髪パーツをクリックで選択、そのままドラッグで移動。Pキーでパネル切替 / Hキーでへんしん(実写→融合→フルを巡回) / ?obs で配信モード / ?debug=1 でマウス=手・M1アイドル動作</p>
 
   <h2>選択中: <span id="selName">なし</span></h2>
   <div class="row"><label>パーツ選択</label>
@@ -1495,8 +1514,8 @@ function nudge(dx, dy){
 
 /* アニメ停止 (編集モード) */
 $('animStop').addEventListener('change', e => model.classList.toggle('editing', e.target.checked));
-/* エディタモードのみアニメ停止。?live / ?obs (=表示用途) ではアイドルアニメを動かす */
-if (!LIVE && !QP.has('obs')) model.classList.add('editing');
+/* エディタモードのみアニメ停止。?live / ?obs / ?debug (=表示・検証用途) ではアイドルアニメを動かす */
+if (!LIVE && !QP.has('obs') && !QP.has('debug')) model.classList.add('editing');
 else $('animStop').checked = false;
 
 /* 縁取り表示切替 (デフォルトON) */
@@ -1895,6 +1914,22 @@ if (DEBUG){
   stage.addEventListener('mouseleave', ()=>{ HANDS = []; });
 }
 
+/* ---- アイドルモーション: 実カメラが無い間、トラッキングの代わりにM1を生かす ----
+   融合/フルの検証で、演出中も --yaw 等のポーズ変数が動き続ける数値証拠になる。
+   実トラッキング(camLoop)が動いている間は何もしない(cam優先)。 */
+function idleLoop(){
+  requestAnimationFrame(idleLoop);
+  if (cam || model.classList.contains('editing')) return;   /* 実トラッキング優先/編集中は触らない */
+  const t = performance.now()/1000, st = model.style;
+  st.setProperty('--yaw',      (Math.sin(t*0.62)*0.34 + Math.sin(t*0.21)*0.12).toFixed(3));
+  st.setProperty('--pitch',    (Math.sin(t*0.5+1)*0.20).toFixed(3));
+  st.setProperty('--roll',     (Math.sin(t*0.4+2)*0.13).toFixed(3));
+  st.setProperty('--pupil-x',  (Math.sin(t*0.35)*0.5).toFixed(3));
+  st.setProperty('--pupil-y',  (Math.sin(t*0.27+1)*0.3).toFixed(3));
+  st.setProperty('--mouth-open',(Math.max(0,Math.sin(t*1.6))*0.32).toFixed(3));
+}
+requestAnimationFrame(idleLoop);
+
 /* ---- FXキャンバス (炎・チャージ球・爆発) ---- */
 const fxc = $('fxCanvas'), fxx = fxc.getContext('2d');
 function sizeFx(){ const r = stage.getBoundingClientRect(); fxc.width = Math.max(2,r.width); fxc.height = Math.max(2,r.height); }
@@ -2072,27 +2107,44 @@ function telop(text, ms){
   clearTimeout(telopTimer); telopTimer=setTimeout(()=>t.classList.remove('on'), ms);
 }
 
-/* ---- 変身 (実写⇄M1) ---- */
-let realMode=false, henshinBusy=false;
+/* ---- 変身 = 3モードの融合レイヤー制御 ----
+   実写(カメラ100%) → 融合(カメラ+トラッキングM1・既定) → フル(M1主体) を巡回。
+   どのモードでもトラッキング/アイドルが #model を駆動し続ける(切替でなく融合)。 */
+const MODES = ['real','fusion','full'];
+const MODE_LABEL = {real:'実写', fusion:'融合', full:'フル'};
+let modeIdx = 1;                 /* 既定=融合 */
+let realMode = false;            /* 後方互換(しょうかん等が参照) */
+function applyMode(){
+  const name = MODES[modeIdx];
+  MODES.forEach((m,i)=>stage.classList.toggle('mode-'+m, i===modeIdx));
+  realMode = (name==='real');
+  const tag = $('modeTag');
+  if (tag){ tag.textContent = MODE_LABEL[name]; tag.className = 'm-'+name; }
+}
+function setMode(name){ const i=MODES.indexOf(name); if (i>=0){ modeIdx=i; applyMode(); } }
+
+let henshinBusy=false;
 function henshin(){
   if (henshinBusy) return; henshinBusy=true;
   flashNow();
-  if (!realMode){
-    /* M1 → 実写 */
-    model.classList.remove('morph-in','land'); void model.offsetWidth;
-    model.classList.add('morph-out');
-    telop('へんしん かいじょ！', 1400);
-    setTimeout(()=>stage.classList.add('show-real'), 420);
-    setTimeout(()=>{ model.classList.remove('morph-out'); realMode=true; henshinBusy=false; }, 900);
-  } else {
-    /* 実写 → M1 */
-    stage.classList.remove('show-real');
-    model.classList.remove('morph-out','land'); void model.offsetWidth;
+  modeIdx = (modeIdx+1) % MODES.length;
+  const to = MODES[modeIdx];
+  applyMode();                   /* レイヤー比率はCSS transitionで連続変化 */
+  model.classList.remove('morph-in','morph-out','land'); void model.offsetWidth;
+  if (to==='full'){
     model.classList.add('morph-in');
-    telop('おりも、へんしん！', 1500);
+    telop('おりも、フルへんしん！', 1500);
     setTimeout(()=>{ model.classList.remove('morph-in'); model.classList.add('land');
       spawnBurst(fxc.width/2, fxc.height*0.4); flashNow(); }, 1050);
-    setTimeout(()=>{ model.classList.remove('land'); realMode=false; henshinBusy=false; }, 1550);
+    setTimeout(()=>{ model.classList.remove('land'); henshinBusy=false; }, 1550);
+  } else if (to==='real'){
+    model.classList.add('morph-out');   /* M1がシルエット化して沈む(裏でトラッキングは継続) */
+    telop('へんしん かいじょ！', 1400);
+    setTimeout(()=>{ model.classList.remove('morph-out'); henshinBusy=false; }, 900);
+  } else {                        /* fusion: 実写の上にトラッキングM1が現れる */
+    model.classList.add('morph-in');
+    telop('ゆうごう！ トラッキングM1 起動', 1500);
+    setTimeout(()=>{ model.classList.remove('morph-in'); henshinBusy=false; }, 1100);
   }
 }
 
@@ -2142,7 +2194,7 @@ function shoukan(){
     setTimeout(()=>{
       ball.style.opacity='0'; ball.classList.remove('open'); ball.style.transform='';
       const sl=$('speedlines'); sl.classList.add('on');
-      if (realMode){ stage.classList.remove('show-real'); realMode=false; }
+      if (realMode) setMode('fusion');   /* 実写だったら融合へ引き上げ(トラッキングM1が登場) */
       model.classList.remove('morph-out','morph-in'); void model.offsetWidth; model.classList.add('land');
       spawnBurst(fxc.width/2, fxc.height*0.4);
       telop('M1 とうじょう！', 2200);
@@ -2216,6 +2268,9 @@ $('hbFire').onclick=orimodante;
 $('hbEvo').onclick=shinka;
 $('hbSummon').onclick=shoukan;
 $('hbCmd').onclick=toggleCmd;
+
+/* 既定モード=融合を適用 (実写⇄融合⇄フルの巡回起点) */
+applyMode();
 </script>
 </body>
 </html>
