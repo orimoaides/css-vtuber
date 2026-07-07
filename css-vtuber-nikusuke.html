@@ -641,6 +641,127 @@ body.obs #panel{display:none}
 .bodygrp .v8{left:244px;top:234px;width:42px;height:48px;background:#b52222}
 .bodygrp .xcup{left:248px;top:220px}
 .bodygrp .xlight{left:34px;top:200px}
+
+/* ===== CSS芸FX (一発演出・全モデル共通移植 2026-07-07 アプリ開発部) =====
+   controllerから {type:'fx', name} で fx-* クラスが付き、時間で外れる。
+   DOMは全モデル共通テンプレートなので、表示中のパーツだけが反応する。 */
+
+/* --- ばらける!: 表示中パーツが放射状に飛び散り、元位置へ集合 (放射ベクトルは共通) --- */
+#model.fx-scatter .facegrp .f-base,
+#model.fx-scatter .hair i,
+#model.fx-scatter .ear.l,#model.fx-scatter .ear.r,
+#model.fx-scatter #deco .eyegrp i,
+#model.fx-scatter #deco .u3,#model.fx-scatter #deco .n15,
+#model.fx-scatter #deco .n1,#model.fx-scatter #deco .n14,#model.fx-scatter #deco .n19,
+#model.fx-scatter .mouth,
+#model.fx-scatter #decoBack i,
+#model.fx-scatter .bodygrp .v2,#model.fx-scatter .bodygrp .v7,#model.fx-scatter .bodygrp .v8,
+#model.fx-scatter .bodygrp .v19,#model.fx-scatter .bodygrp .v20{
+  animation:fxScatter 1.8s cubic-bezier(.3,.7,.3,1) both}
+@keyframes fxScatter{
+  0%{translate:0 0;rotate:0deg}
+  22%,52%{translate:var(--fxx,0px) var(--fxy,0px);rotate:var(--fxr,0deg)}
+  80%{translate:calc(var(--fxx,0px)*-.07) calc(var(--fxy,0px)*-.07);
+      rotate:calc(var(--fxr,0deg)*-.1)}
+  100%{translate:0 0;rotate:0deg}}
+#model.fx-scatter .facegrp .f-base{--fxx:62px;--fxy:-46px;--fxr:16deg}
+#model.fx-scatter .hair .b1{--fxx:-90px;--fxy:-120px;--fxr:-40deg}
+#model.fx-scatter .hair .b2{--fxx:130px;--fxy:-20px;--fxr:30deg;animation-delay:.08s}
+#model.fx-scatter .hair .b3{--fxx:110px;--fxy:-100px;--fxr:50deg;animation-delay:.04s}
+#model.fx-scatter .hair .b4{--fxx:-125px;--fxy:-30px;--fxr:-35deg;animation-delay:.06s}
+#model.fx-scatter .hair .b8{--fxx:0px;--fxy:-150px;--fxr:15deg;animation-delay:.02s}
+#model.fx-scatter .hair .u1{--fxx:60px;--fxy:-160px;--fxr:120deg;animation-delay:.1s}
+#model.fx-scatter .hair .n2{--fxx:150px;--fxy:-70px;--fxr:80deg;animation-delay:.05s}
+#model.fx-scatter .hair .n34{--fxx:170px;--fxy:10px;--fxr:-60deg;animation-delay:.09s}
+#model.fx-scatter .ear.l{--fxx:-150px;--fxy:20px;--fxr:-50deg;animation-delay:.07s}
+#model.fx-scatter .ear.r{--fxx:155px;--fxy:25px;--fxr:55deg;animation-delay:.03s}
+#model.fx-scatter #deco .eyegrp .n12{--fxx:-75px;--fxy:-45px;--fxr:-25deg;animation-delay:.05s}
+#model.fx-scatter #deco .eyegrp .n11{--fxx:85px;--fxy:-55px;--fxr:30deg;animation-delay:.08s}
+#model.fx-scatter #deco .u3{--fxx:-45px;--fxy:35px;--fxr:-80deg;animation-delay:.1s}
+#model.fx-scatter #deco .n15{--fxx:55px;--fxy:45px;--fxr:90deg;animation-delay:.02s}
+#model.fx-scatter #deco .n1{--fxx:-60px;--fxy:-95px;--fxr:70deg;animation-delay:.06s}
+#model.fx-scatter #deco .n14{--fxx:-120px;--fxy:-25px;--fxr:-20deg;animation-delay:.05s}
+#model.fx-scatter #deco .n19{--fxx:120px;--fxy:-25px;--fxr:20deg;animation-delay:.07s}
+#model.fx-scatter .mouth{--fxx:0px;--fxy:95px;--fxr:20deg;animation-delay:.04s}
+#model.fx-scatter #decoBack .u2{--fxx:-40px;--fxy:130px;--fxr:-25deg;animation-delay:.05s}
+#model.fx-scatter #decoBack .u4{--fxx:60px;--fxy:150px;--fxr:40deg;animation-delay:.09s}
+#model.fx-scatter #decoBack .u5{--fxx:120px;--fxy:90px;--fxr:60deg;animation-delay:.06s}
+#model.fx-scatter #decoBack .n4{--fxx:-140px;--fxy:60px;--fxr:-45deg;animation-delay:.04s}
+#model.fx-scatter #decoBack .n5{--fxx:140px;--fxy:60px;--fxr:45deg;animation-delay:.05s}
+#model.fx-scatter #decoBack .n21{--fxx:-70px;--fxy:120px;--fxr:-30deg;animation-delay:.08s}
+#model.fx-scatter #decoBack .n27{--fxx:70px;--fxy:120px;--fxr:35deg;animation-delay:.07s}
+#model.fx-scatter #decoBack .n28{--fxx:-150px;--fxy:20px;--fxr:-55deg;animation-delay:.03s}
+#model.fx-scatter .bodygrp .v2{--fxx:0px;--fxy:150px;--fxr:10deg;animation-delay:.05s}
+#model.fx-scatter .bodygrp .v7{--fxx:-150px;--fxy:90px;--fxr:-40deg;animation-delay:.06s}
+#model.fx-scatter .bodygrp .v8{--fxx:150px;--fxy:90px;--fxr:40deg;animation-delay:.04s}
+#model.fx-scatter .bodygrp .v19{--fxx:-90px;--fxy:150px;--fxr:-20deg;animation-delay:.09s}
+#model.fx-scatter .bodygrp .v20{--fxx:90px;--fxy:150px;--fxr:20deg;animation-delay:.07s}
+
+/* 全身FXは :not(#_) で特異度を底上げし、body-sway等の常時アニメ(提灯/瓶の
+   #model.idle-bob.body-sway .bob = 特異度1,3,0)に確実に勝たせる(#_ は常時マッチ) */
+/* --- グリッチ: 一瞬ノイズが走る --- */
+#model.fx-glitch:not(#_) .bob{animation:fxGlitch .8s steps(1) both}
+@keyframes fxGlitch{
+  0%,100%{translate:0 0;clip-path:none;filter:none}
+  8%{translate:-7px 2px;filter:hue-rotate(90deg) saturate(3)}
+  16%{translate:6px -2px;clip-path:inset(12% 0 55% 0);filter:hue-rotate(-120deg)}
+  24%{translate:-4px 0;clip-path:inset(48% 0 18% 0);filter:invert(.7)}
+  32%{translate:8px 3px;clip-path:none;filter:hue-rotate(200deg) saturate(4)}
+  44%{translate:-6px -3px;clip-path:inset(30% 0 40% 0);filter:none}
+  56%{translate:3px 1px;clip-path:none;filter:hue-rotate(-80deg)}
+  70%{translate:-2px 0;clip-path:inset(60% 0 8% 0);filter:saturate(2)}
+  84%{translate:0 0;clip-path:none;filter:none}}
+
+/* --- くるん: その場で1回転 (原点は中心に固定=提灯の吊り軸などに引っ張られない) --- */
+#model.fx-spin:not(#_) .bob{transform-origin:center;animation:fxSpin 1s cubic-bezier(.45,.05,.25,1) both}
+@keyframes fxSpin{to{rotate:360deg}}
+
+/* --- ぴょん: 潰れてジャンプ (スカッシュ&ストレッチ・接地点で伸縮) --- */
+#model.fx-boing:not(#_) .bob{transform-origin:160px 430px;animation:fxBoing 1s ease-out both}
+@keyframes fxBoing{
+  0%{translate:0 0;scale:1 1}
+  16%{translate:0 8px;scale:1.14 .78}
+  38%{translate:0 -52px;scale:.88 1.16}
+  60%{translate:0 0;scale:1.06 .9}
+  78%{translate:0 -8px;scale:.98 1.04}
+  100%{translate:0 0;scale:1 1}}
+
+/* --- ぷるぷる: ゼリーみたいに横ゆれ (skew減衰) --- */
+#model.fx-jelly:not(#_) .bob{transform-origin:160px 430px;animation:fxJelly 1.05s ease-out both}
+@keyframes fxJelly{
+  0%,100%{transform:none}
+  14%{transform:skewX(-13deg) scale(1.07,.93)}
+  30%{transform:skewX(10deg) scale(.95,1.06)}
+  46%{transform:skewX(-7deg) scale(1.03,.97)}
+  62%{transform:skewX(4deg)}
+  80%{transform:skewX(-2deg)}}
+
+/* --- とける: どろっと潰れて→ぽんっと復元 --- */
+#model.fx-melt:not(#_) .bob{transform-origin:160px 430px;animation:fxMelt 1.6s cubic-bezier(.6,0,.35,1) both}
+@keyframes fxMelt{
+  0%{scale:1 1;translate:0 0}
+  42%{scale:1.55 .24;translate:0 6px}
+  58%{scale:1.55 .24;translate:0 6px}
+  78%{scale:.9 1.13;translate:0 0}
+  92%{scale:1.04 .97}
+  100%{scale:1 1}}
+
+/* --- ぶんしん: 赤青の残像が左右にずれて分裂→戻る (RGBスプリット) --- */
+#model.fx-clone:not(#_) .bob{animation:fxClone 1s ease-in-out both}
+@keyframes fxClone{
+  0%,100%{filter:none;translate:0 0}
+  16%{filter:drop-shadow(-18px 0 0 rgba(255,40,95,.55)) drop-shadow(18px 0 0 rgba(40,200,255,.55));translate:0 0}
+  34%{translate:11px 0}
+  52%{filter:drop-shadow(-26px 0 0 rgba(255,40,95,.5)) drop-shadow(26px 0 0 rgba(40,200,255,.5));translate:-11px 0}
+  74%{translate:6px 0}
+  90%{filter:drop-shadow(-6px 0 0 rgba(255,40,95,.4)) drop-shadow(6px 0 0 rgba(40,200,255,.4))}}
+
+/* --- にじいろ: 色相を一周させるディスコ演出 --- */
+#model.fx-rainbow:not(#_) .bob{animation:fxRainbow 1.2s linear both}
+@keyframes fxRainbow{
+  0%{filter:hue-rotate(0) saturate(1.6)}
+  100%{filter:hue-rotate(360deg) saturate(1.6)}}
+
 </style>
 </head>
 <body>
@@ -1214,6 +1335,9 @@ const ANIMS = ['auto-blink','auto-gaze','idle-bob','idle-breathe','hair-sway',
 const POSES = ['raise-l','raise-r','wave','think','front'];
 const EMOS = ['heart','anger','sweat','ex','q','zzz'];
 const ITEMS = ['cup','light'];
+const FXS = {scatter: 1900, glitch: 900, spin: 1050, boing: 1050,
+             jelly: 1100, melt: 1650, clone: 1050, rainbow: 1250};
+let fxTimer = 0;
 function setVarSafe(key, value){
   if (typeof key === 'string' && key.startsWith('--')) model.style.setProperty(key, String(value));
 }
@@ -1237,6 +1361,14 @@ window.addEventListener('message', e => {
     if (m.name && EMOS.includes(m.name)) { void model.offsetWidth; model.classList.add('emo-' + m.name); }
   } else if (m.type === 'item' && ITEMS.includes(m.name)) {
     model.classList.toggle('item-' + m.name, !!m.on);
+  } else if (m.type === 'fx' && FXS[m.name]) {
+    /* CSS芸FX ワンショット: reflowで連打対応 → 終了時刻にクラスを外す */
+    clearTimeout(fxTimer);
+    Object.keys(FXS).forEach(x => model.classList.remove('fx-' + x));
+    void model.offsetWidth;
+    model.classList.add('fx-' + m.name);
+    fxTimer = setTimeout(() => Object.keys(FXS).forEach(x => model.classList.remove('fx-' + x)),
+                         FXS[m.name]);
   } else if (m.type === 'cfg' && m.key === 'recenter') {
     NEUP.n = 0;   /* いまの姿勢を正面として再学習 */
   } else if (m.type === 'cfg' && Object.prototype.hasOwnProperty.call(CFG, m.key)) {
