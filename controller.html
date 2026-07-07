@@ -68,7 +68,8 @@ body.viewer #panel{display:none}
     モデルの上でマウスを動かすと視線と首が追従。<br>
     Space長押し: 口を開く / 1〜0・Q・W・E・R: 表情<br>
     Z・X・C・V: ポーズ / A〜H: エモート<br>
-    M: ノリノリ / N・B: アイテム
+    M: ノリノリ / N・B: アイテム<br>
+    , へんしん / . オリモダンテ / / しんか / ; しょうかん
   </p>
 
   <h2>表情</h2>
@@ -177,6 +178,22 @@ body.viewer #panel{display:none}
   <p class="hint" style="margin-top:6px">目の開きは「普段の開き具合」を自動で覚えて正規化します。
     半目になりがちなら、まばたき感度を下げてみてください</p>
 
+  <h2>実写融合 / 変身 <span style="font-weight:400;color:#8a8175">(orimo君のみ)</span></h2>
+  <div class="grid" id="fusionBtns">
+    <button data-fusion="off" class="on">融合OFF</button>
+    <button data-fusion="blend">融合</button>
+    <button data-fusion="full">フル実写</button>
+  </div>
+  <div class="row" style="margin-top:6px"><label>実写の濃さ</label><input type="range" id="camOpSl" min="0" max="100" value="0"><output>0</output></div>
+  <div class="grid" id="henshinFxBtns" style="margin-top:6px">
+    <button data-hfx="henshin"><b>,</b>へんしん</button>
+    <button data-hfx="orimodante"><b>.</b>オリモダンテ</button>
+    <button data-hfx="shinka"><b>/</b>しんか</button>
+    <button data-hfx="shoukan"><b>;</b>しょうかん</button>
+  </div>
+  <p class="hint" style="margin-top:6px">融合=カメラ映像とトラッキングM1を重ねる(先に「カメラで動かす」を起動)。
+    VTuberモデルは常に主役で、実写を下に合成します。他5モデルは融合非対応(無視)。</p>
+
   <h2>表示</h2>
   <div class="row" style="margin-bottom:6px"><label>モデル</label>
     <select id="modelSel" style="flex:1;min-width:0;font-size:12px">
@@ -213,7 +230,7 @@ const MODELS = {
 };
 /* ビューアが自iframeへ転送してよいメッセージ。'cam' は含めない
    (カメラはcontroller側モデルだけが起動し、結果は 'track' で中継される) */
-const ALLOW = ['exp','var','vars','anim','pose','emo','item','fx','cfg','track'];
+const ALLOW = ['exp','var','vars','anim','pose','emo','item','fx','cfg','track','fusion'];
 /* 別窓連携用チャンネル: opener経由のpostMessageに加えて、
    開き方によらず同一ブラウザ内で届くBroadcastChannelでも同期する */
 const bc = new BroadcastChannel('cssvtuber-ctrl');
@@ -333,6 +350,7 @@ const state = {
   items: {cup:false, light:false},
   cfg: {eyeGain:1.4, smooth:.15, pose:true},
   vars: {'--roll':0,'--eye-open':1,'--zoom':1,'--beat':.5},
+  fusion: {mode:'off', camOpacity:0},
   follow: true, cam: false
 };
 let viewerWin = null;
@@ -356,6 +374,8 @@ function sendAll(){
   Object.keys(state.items).forEach(k => send({type:'item', name:k, on: state.items[k]}));
   Object.keys(state.cfg).forEach(k => send({type:'cfg', key:k, value: state.cfg[k]}));
   send({type:'vars', vars: state.vars});
+  /* 実写融合レベルを復元 (非対応モデルは無視するだけ)。camOpacityで無段階に正確復元 */
+  send({type:'fusion', camOpacity: state.fusion.camOpacity});
 }
 /* モデル(自分のiframe/別窓)の準備ができたら状態を流し込む。カメラ成否も受ける。
    自iframeのトラッキング結果('track')は別窓へ中継する */
@@ -363,6 +383,11 @@ window.addEventListener('message', e => {
   const m = e.data, t = m && m.type;
   if (t === 'vtuber-ready' || t === 'viewer-ready') sendAll();
   else if (t === 'track' && e.source === frame.contentWindow) relay(m);
+  else if (t === 'fusion-state' && e.source === frame.contentWindow) {
+    /* モデルが報告する現在の融合状態でUIを同期 (真実の源はモデル側) */
+    state.fusion.mode = m.mode; state.fusion.camOpacity = m.camOpacity;
+    syncFusionUI();
+  }
   else if (t === 'cam-state') {
     state.cam = !!m.on;
     $('camBtn').textContent = state.cam ? 'カメラを停止' : 'カメラで動かす';
@@ -413,6 +438,41 @@ const FX_KEYS = {t:'scatter', y:'glitch', u:'spin', i:'boing',
                  o:'jelly', p:'melt', k:'clone', l:'rainbow'};
 document.querySelectorAll('#fxBtns button').forEach(b =>
   b.addEventListener('click', () => send({type:'fx', name: b.dataset.fx})));
+
+/* --- 実写融合 (プリセット + 無段階スライダー) + 変身系FX --- */
+const CAM_PRESET = {off:0, blend:0.5, full:1};
+function syncFusionUI(){
+  const custom = !(state.fusion.mode in CAM_PRESET);
+  document.querySelectorAll('#fusionBtns button').forEach(b =>
+    b.classList.toggle('on', !custom && b.dataset.fusion === state.fusion.mode));
+  const sl = $('camOpSl');
+  sl.value = Math.round(state.fusion.camOpacity * 100);
+  sl.parentElement.querySelector('output').textContent = sl.value;
+}
+function setFusion(mode){
+  if (!(mode in CAM_PRESET)) return;
+  state.fusion.mode = mode;
+  state.fusion.camOpacity = CAM_PRESET[mode];
+  send({type:'fusion', mode});
+  syncFusionUI();
+}
+document.querySelectorAll('#fusionBtns button').forEach(b =>
+  b.addEventListener('click', () => setFusion(b.dataset.fusion)));
+$('camOpSl').addEventListener('input', e => {
+  const v = +(e.target.value / 100).toFixed(2);
+  state.fusion.camOpacity = v;
+  state.fusion.mode = v <= 0.02 ? 'off' : v >= 0.98 ? 'full' : (Math.abs(v-0.5)<0.02 ? 'blend' : 'custom');
+  send({type:'fusion', camOpacity: v});
+  e.target.parentElement.querySelector('output').textContent = e.target.value;
+  document.querySelectorAll('#fusionBtns button').forEach(b =>
+    b.classList.toggle('on', b.dataset.fusion === state.fusion.mode));
+});
+/* 変身系FX (へんしん/オリモダンテ/しんか/しょうかん): fxメッセージで発火。
+   へんしんはモデル側で融合レベルを巡回する。UIはモデルからの fusion-state 通知で同期。 */
+const HFX_KEYS = {',':'henshin', '.':'orimodante', '/':'shinka', ';':'shoukan'};
+function fireHfx(name){ send({type:'fx', name}); }
+document.querySelectorAll('#henshinFxBtns button').forEach(b =>
+  b.addEventListener('click', () => fireHfx(b.dataset.hfx)));
 
 /* --- ノリノリモード + テンポ --- */
 function toggleGroove(){
@@ -556,6 +616,7 @@ window.addEventListener('keydown', e => {
   else if (EMO_KEYS[k]) send({type:'emo', name: EMO_KEYS[k]});
   else if (FX_KEYS[k]) send({type:'fx', name: FX_KEYS[k]});
   else if (ITEM_KEYS[k]) toggleItem(ITEM_KEYS[k]);
+  else if (HFX_KEYS[k]) fireHfx(HFX_KEYS[k]);
   else if (k === 'm') toggleGroove();
 });
 window.addEventListener('keyup', e => { if (e.key === ' ') follow.mouthT = 0; });
@@ -627,6 +688,10 @@ function setModel(name, init){
     $('camBtn').textContent = 'カメラで動かす';
     $('camStat').textContent = '停止中 (モデル切替でカメラは止まりました)';
   }
+  /* 融合は安全な既定(OFF)に戻す。カメラも止まるので実写を残さない。
+     新モデル読み込み後の sendAll で off が再送される */
+  state.fusion = {mode:'off', camOpacity:0};
+  if (typeof syncFusionUI === 'function') syncFusionUI();
   const src = MODELS[name] + '?obs';
   if (!init || frame.getAttribute('src') !== src) frame.src = src;
   relay({type:'model', name});

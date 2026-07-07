@@ -696,23 +696,20 @@ body.obs #panel{display:none}
    「へんしん」は排他切替でなく、各レイヤーの不透明度・フィルタの連続変化として再定義。
    顔トラッキング(camLoop) と アイドルモーション は全モードで #model を駆動し続ける。 */
 #camView{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;
-  transform:scaleX(-1);z-index:0;opacity:0;pointer-events:none;
+  transform:scaleX(-1);z-index:0;pointer-events:none;
+  opacity:var(--cam-op,0);filter:var(--cam-filter,none);
   transition:opacity .6s ease, filter .6s ease}
 /* デバッグ用の疑似「実写」背景 (カメラ無しでも融合/変身を確認できる) */
 #camView.debugbg{background:
   radial-gradient(58% 78% at 50% 34%,#3d4d58 0%,#232a30 62%,#14181d 100%)}
-#model{transition:opacity .5s ease, filter .5s ease}
+/* M1は全モードで常に表示 = しっかりVTuberとして使える。実写は下に重なるだけ。 */
+#model{opacity:1;transition:filter .5s ease}
 
-/* --- モード別レイヤー比率 (連続変化はtransitionが担う) --- */
-/* 実写: カメラ100%・M1非表示 (トラッキングは裏で生き続ける) */
-#stage.mode-real   #camView{opacity:1}
-#stage.mode-real   #model{opacity:0}
-/* 融合(既定): カメラを沈めた上にトラッキングM1を重ねる = CSS Vtuberの本領 */
-#stage.mode-fusion #camView{opacity:.5;filter:saturate(.72) brightness(.66) contrast(1.03)}
-#stage.mode-fusion #model{opacity:1}
-/* フル: M1主体・カメラは気配だけ */
-#stage.mode-full   #camView{opacity:.12;filter:saturate(.4) brightness(.5)}
-#stage.mode-full   #model{opacity:1}
+/* --- 実写融合レイヤー比率 (VTuberモデルが主役・実写を下に合成) ---
+   融合OFF(既定)=カメラ非表示=純VTuber(トラッキングでカメラONでも実写は出さない)。
+   融合(blend)=実写を沈めてM1に重ねる。フル(full)=実写くっきり+M1。
+   実際の不透明度/フィルタは --cam-op / --cam-filter をJSが管理し、
+   controllerの「実写の濃さ」スライダーで無段階制御できる。 */
 
 /* 白フラッシュ */
 #flash{position:absolute;inset:0;background:#fff;opacity:0;z-index:40;
@@ -818,12 +815,12 @@ body.obs #panel{display:none}
 #henshinBar button:hover{background:#F2B33C}
 #henshinBar button:active{transform:translateY(3px);box-shadow:0 1px 0 #292826}
 #henshinBar .fire{background:#E85D26;color:#fff}
-/* モード表示バッジ (実写 / 融合 / フル) */
+/* 融合モード表示バッジ (融合OFF / 融合 / フル) */
 #modeTag{align-self:center;font:800 13px/1 "Hiragino Sans",sans-serif;color:#F4ECD8;
-  background:#5E7E7A;border:3px solid #292826;border-radius:11px;padding:8px 11px;
+  background:#292826;border:3px solid #292826;border-radius:11px;padding:8px 11px;
   box-shadow:0 4px 0 #292826;letter-spacing:.06em}
-#modeTag.m-real{background:#292826}
-#modeTag.m-fusion{background:#E85D26}
+#modeTag.m-off{background:#292826}
+#modeTag.m-blend{background:#E85D26}
 #modeTag.m-full{background:#5E7E7A}
 #henshinBar .fire:hover{background:#f2723d}
 #henshinBar .k{opacity:.55;font-weight:600;margin-left:5px;font-size:11px}
@@ -915,7 +912,7 @@ body.obs #panel{display:none}
   </div>
 
   <div id="henshinBar">
-    <span id="modeTag" class="m-fusion">融合</span>
+    <span id="modeTag" class="m-off">融合OFF</span>
     <button id="hbHenshin">へんしん<span class="k">H</span></button>
     <button id="hbFire" class="fire">オリモダンテ<span class="k">F</span></button>
     <button id="hbEvo">しんか<span class="k">E</span></button>
@@ -926,7 +923,7 @@ body.obs #panel{display:none}
 
 <aside id="panel">
   <h1>髪型エディタ</h1>
-  <p class="hint">髪パーツをクリックで選択、そのままドラッグで移動。Pキーでパネル切替 / Hキーでへんしん(実写→融合→フルを巡回) / ?obs で配信モード / ?debug=1 でマウス=手・M1アイドル動作</p>
+  <p class="hint">髪パーツをクリックで選択、そのままドラッグで移動。Pキーでパネル切替 / Hキーで融合切替(OFF→融合→フル実写を巡回) / ?obs で配信モード / ?debug=1 でマウス=手・M1アイドル動作。融合は正はcontroller.htmlから操作</p>
 
   <h2>選択中: <span id="selName">なし</span></h2>
   <div class="row"><label>パーツ選択</label>
@@ -1440,6 +1437,14 @@ const ITEMS = ['cup','light'];
 /* FX: 一発演出。アイドルアニメと同じ要素を奪い合うため、終了後にクラスを外して返す */
 const FXS = {scatter: 1900, glitch: 900, spin: 1050, boing: 1050,
              jelly: 1100, melt: 1650, clone: 1050, rainbow: 1250};
+/* 変身スタジオ系の演出関数 (関数宣言なので巻き上げ済み・後方の定義を参照できる)。
+   controllerから {type:'fx', name:'henshin'|'orimodante'|'shinka'|'shoukan'} で発火。 */
+const FX_FN = {
+  henshin:    () => henshin(),
+  orimodante: () => orimodante(),
+  shinka:     () => shinka(),
+  shoukan:    () => shoukan()
+};
 let fxTimer = 0;
 function setVarSafe(key, value){
   if (typeof key === 'string' && key.startsWith('--')) model.style.setProperty(key, String(value));
@@ -1464,6 +1469,9 @@ window.addEventListener('message', e => {
     if (m.name && EMOS.includes(m.name)) { void model.offsetWidth; model.classList.add('emo-' + m.name); }
   } else if (m.type === 'item' && ITEMS.includes(m.name)) {
     model.classList.toggle('item-' + m.name, !!m.on);
+  } else if (m.type === 'fx' && FX_FN[m.name]) {
+    /* 変身スタジオ系の一発演出 (へんしん/オリモダンテ/しんか/しょうかん) */
+    try { FX_FN[m.name](); } catch (_) {}
   } else if (m.type === 'fx' && FXS[m.name]) {
     /* ワンショット再生: reflowで連打対応 → 終了時刻にクラスを外す */
     clearTimeout(fxTimer);
@@ -1472,6 +1480,11 @@ window.addEventListener('message', e => {
     model.classList.add('fx-' + m.name);
     fxTimer = setTimeout(() => Object.keys(FXS).forEach(x => model.classList.remove('fx-' + x)),
                          FXS[m.name]);
+  } else if (m.type === 'fusion') {
+    /* 実写融合の遠隔操作: mode(off/blend/full) か camOpacity(0..1)。
+       融合非対応モデルはこのtypeを無視するだけで壊れない。 */
+    if (typeof m.camOpacity === 'number') setCamOpacity(m.camOpacity);
+    else if (typeof m.mode === 'string') setFusionMode(m.mode);
   } else if (m.type === 'cfg' && m.key === 'recenter') {
     NEUP.n = 0;   /* いまの姿勢を正面として再学習 */
   } else if (m.type === 'cfg' && Object.prototype.hasOwnProperty.call(CFG, m.key)) {
@@ -1919,7 +1932,9 @@ if (DEBUG){
    実トラッキング(camLoop)が動いている間は何もしない(cam優先)。 */
 function idleLoop(){
   requestAnimationFrame(idleLoop);
-  if (cam || model.classList.contains('editing')) return;   /* 実トラッキング優先/編集中は触らない */
+  /* 実トラッキング優先 / 編集中は触らない / controller等に埋め込まれている時は
+     親がマウス追従・track中継で駆動するのでアイドルは動かさない(値の奪い合い防止) */
+  if (cam || model.classList.contains('editing') || window.parent !== window) return;
   const t = performance.now()/1000, st = model.style;
   st.setProperty('--yaw',      (Math.sin(t*0.62)*0.34 + Math.sin(t*0.21)*0.12).toFixed(3));
   st.setProperty('--pitch',    (Math.sin(t*0.5+1)*0.20).toFixed(3));
@@ -2107,43 +2122,73 @@ function telop(text, ms){
   clearTimeout(telopTimer); telopTimer=setTimeout(()=>t.classList.remove('on'), ms);
 }
 
-/* ---- 変身 = 3モードの融合レイヤー制御 ----
-   実写(カメラ100%) → 融合(カメラ+トラッキングM1・既定) → フル(M1主体) を巡回。
-   どのモードでもトラッキング/アイドルが #model を駆動し続ける(切替でなく融合)。 */
-const MODES = ['real','fusion','full'];
-const MODE_LABEL = {real:'実写', fusion:'融合', full:'フル'};
-let modeIdx = 1;                 /* 既定=融合 */
+/* ---- 実写融合エンジン (VTuberモデルは常に主役・実写を下に合成) ----
+   モード: off(カメラ非表示=純VTuber・既定) / blend(実写を沈めて重ねる) / full(実写くっきり)。
+   M1は全モードで表示され、トラッキング/アイドルが駆動し続ける(切替でなく融合)。
+   実際の見えは --cam-op(不透明度) と --cam-filter で制御し、無段階スライダーにも対応。 */
+const MODES = ['off','blend','full'];
+const MODE_LABEL = {off:'融合OFF', blend:'融合', full:'フル実写'};
+const CAM_PRESET = {off:0, blend:0.5, full:1};
+let fusionMode = 'off';          /* 既定=融合OFF (=しっかりVTuberとして使える) */
+let camOp = 0;
 let realMode = false;            /* 後方互換(しょうかん等が参照) */
-function applyMode(){
-  const name = MODES[modeIdx];
-  MODES.forEach((m,i)=>stage.classList.toggle('mode-'+m, i===modeIdx));
-  realMode = (name==='real');
-  const tag = $('modeTag');
-  if (tag){ tag.textContent = MODE_LABEL[name]; tag.className = 'm-'+name; }
+function camFilterFor(op){
+  return op >= 0.92 ? 'none'                                   /* フル実写=素通し */
+       : op <= 0.01 ? 'none'
+       : 'saturate(.72) brightness(.7) contrast(1.03)';        /* 中間=沈めてM1を立てる */
 }
-function setMode(name){ const i=MODES.indexOf(name); if (i>=0){ modeIdx=i; applyMode(); } }
+function applyFusion(){
+  camOp = Math.max(0, Math.min(1, camOp));
+  stage.style.setProperty('--cam-op', camOp.toFixed(3));
+  stage.style.setProperty('--cam-filter', camFilterFor(camOp));
+  realMode = false;              /* M1は隠さない設計になったので常にfalse */
+  const tag = $('modeTag');
+  if (tag){
+    const lbl = fusionMode==='custom' ? '融合 '+Math.round(camOp*100)+'%' : MODE_LABEL[fusionMode];
+    tag.textContent = lbl;
+    tag.className = 'm-' + (fusionMode==='custom' ? 'blend' : fusionMode);
+  }
+  /* controllerへ現在の融合状態を報告 (モデルが真実の源。へんしんのbusy debounceや
+     巡回でズレないよう、controllerのUIはこの通知で同期する) */
+  if (window.parent !== window) {
+    try { window.parent.postMessage({type:'fusion-state', mode:fusionMode, camOpacity:camOp}, '*'); } catch (_) {}
+  }
+}
+/* プリセット切替 (off/blend/full) */
+function setFusionMode(name){
+  if (!(name in CAM_PRESET)) return;
+  fusionMode = name; camOp = CAM_PRESET[name]; applyFusion();
+}
+/* 実写の濃さを無段階指定 (controllerのスライダー / {type:'fusion',camOpacity}) */
+function setCamOpacity(v){
+  v = Math.max(0, Math.min(1, +v || 0));
+  camOp = v;
+  fusionMode = v<=0.02 ? 'off' : v>=0.98 ? 'full' : (Math.abs(v-0.5)<0.02 ? 'blend' : 'custom');
+  applyFusion();
+}
+function setMode(name){ setFusionMode(name); }   /* 後方互換 */
 
 let henshinBusy=false;
+/* へんしん = 融合レベルを OFF→融合→フル実写 で巡回 (演出付き・M1は消えない) */
 function henshin(){
   if (henshinBusy) return; henshinBusy=true;
   flashNow();
-  modeIdx = (modeIdx+1) % MODES.length;
-  const to = MODES[modeIdx];
-  applyMode();                   /* レイヤー比率はCSS transitionで連続変化 */
+  const i = MODES.indexOf(fusionMode==='custom' ? 'blend' : fusionMode);
+  const to = MODES[(i+1) % MODES.length];
+  setFusionMode(to);             /* 実写レイヤーの濃さがCSS transitionで連続変化 */
   model.classList.remove('morph-in','morph-out','land'); void model.offsetWidth;
-  if (to==='full'){
+  if (to==='off'){
+    telop('へんしん かいじょ！ VTuberモード', 1400);
+    setTimeout(()=>{ henshinBusy=false; }, 700);
+  } else if (to==='full'){
     model.classList.add('morph-in');
-    telop('おりも、フルへんしん！', 1500);
+    telop('フル実写、ゆうごう！', 1500);
     setTimeout(()=>{ model.classList.remove('morph-in'); model.classList.add('land');
       spawnBurst(fxc.width/2, fxc.height*0.4); flashNow(); }, 1050);
     setTimeout(()=>{ model.classList.remove('land'); henshinBusy=false; }, 1550);
-  } else if (to==='real'){
-    model.classList.add('morph-out');   /* M1がシルエット化して沈む(裏でトラッキングは継続) */
-    telop('へんしん かいじょ！', 1400);
-    setTimeout(()=>{ model.classList.remove('morph-out'); henshinBusy=false; }, 900);
-  } else {                        /* fusion: 実写の上にトラッキングM1が現れる */
+  } else {                        /* blend: 実写の上にトラッキングM1が現れる */
     model.classList.add('morph-in');
-    telop('ゆうごう！ トラッキングM1 起動', 1500);
+    telop('おりも、ゆうごう！', 1500);
     setTimeout(()=>{ model.classList.remove('morph-in'); henshinBusy=false; }, 1100);
   }
 }
@@ -2269,8 +2314,8 @@ $('hbEvo').onclick=shinka;
 $('hbSummon').onclick=shoukan;
 $('hbCmd').onclick=toggleCmd;
 
-/* 既定モード=融合を適用 (実写⇄融合⇄フルの巡回起点) */
-applyMode();
+/* 既定=融合OFF を適用 (純VTuber。融合はcontroller/Hキーでopt-in) */
+applyFusion();
 </script>
 </body>
 </html>
