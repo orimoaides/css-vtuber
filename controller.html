@@ -580,6 +580,14 @@ viewport.addEventListener('pointermove', e => {
   follow.ty = Math.max(-1, Math.min(1, (e.clientY - r.top - r.height/2) / (r.height/2)));
 });
 viewport.addEventListener('pointerleave', () => { follow.tx = 0; follow.ty = 0; });
+/* 前回送った値を憶えて、変化した変数だけ送る。アイドル(follow静止・mic無)では
+   毎フレームの postMessage とモデル側 recalcStyle をゼロにする(値が動いていないため) */
+const lastSent = {};
+function sendChanged(v){
+  const out = {}; let any = false;
+  for (const k in v){ if (lastSent[k] !== v[k]){ out[k] = v[k]; lastSent[k] = v[k]; any = true; } }
+  if (any) send({type:'vars', vars: out});
+}
 (function loop(){
   requestAnimationFrame(loop);
   const lv = micLevel();                       /* マイク口パクはカメラ中も動かす */
@@ -591,14 +599,14 @@ viewport.addEventListener('pointerleave', () => { follow.tx = 0; follow.ty = 0; 
   follow.y += (follow.ty - follow.y) * .13;
   follow.mouth += (follow.mouthT - follow.mouth) * .3;
   const v = {'--mouth-open': +follow.mouth.toFixed(3)};
-  if (lv !== null) v['--mic'] = lv;
+  if (lv !== null) v['--mic'] = lv;            /* micは毎フレーム変動するので常に送出 */
   if (state.follow) {
     v['--yaw'] = +follow.x.toFixed(3);
     v['--pitch'] = +(follow.y * .7).toFixed(3);
     v['--pupil-x'] = +follow.x.toFixed(3);
     v['--pupil-y'] = +follow.y.toFixed(3);
   }
-  send({type:'vars', vars: v});
+  sendChanged(v);
 })();
 $('followChk').addEventListener('change', e => {
   state.follow = e.target.checked;

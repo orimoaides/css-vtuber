@@ -1913,6 +1913,7 @@ function handLoop(){
     out.push({x:1-px, y:py, tips});
   }
   HANDS = out;
+  if (out.length) ensureFx();   /* 手が映っている間だけ指先の炎ループを回す */
 }
 
 /* ---- デバッグ: マウス=手 (中央に寄せると両手接近=チャージ、外へ広げると発動) ---- */
@@ -1923,6 +1924,7 @@ if (DEBUG){
     const r = stage.getBoundingClientRect();
     const mx = (e.clientX-r.left)/r.width, my = (e.clientY-r.top)/r.height;
     HANDS = [mk(mx,my), mk(1-mx,my)];
+    ensureFx();
   });
   stage.addEventListener('mouseleave', ()=>{ HANDS = []; });
 }
@@ -1930,11 +1932,17 @@ if (DEBUG){
 /* ---- アイドルモーション: 実カメラが無い間、トラッキングの代わりにM1を生かす ----
    融合/フルの検証で、演出中も --yaw 等のポーズ変数が動き続ける数値証拠になる。
    実トラッキング(camLoop)が動いている間は何もしない(cam優先)。 */
-function idleLoop(){
+let idleLast = 0;
+function idleLoop(ts){
+  /* controller等に埋め込まれている時は親がモデルを駆動するので、アイドルRAFは
+     一切回さない(無駄なrepaint/値の奪い合いを止める＝ここでreturnし再スケジュールしない) */
+  if (window.parent !== window) return;
   requestAnimationFrame(idleLoop);
-  /* 実トラッキング優先 / 編集中は触らない / controller等に埋め込まれている時は
-     親がマウス追従・track中継で駆動するのでアイドルは動かさない(値の奪い合い防止) */
-  if (cam || model.classList.contains('editing') || window.parent !== window) return;
+  /* 実トラッキング優先 / 編集中は触らない */
+  if (cam || model.classList.contains('editing')) return;
+  /* アイドルの揺れは0.6Hz級の緩慢な動き。30fpsで体感差なし＝recalcStyleを半減 */
+  if (ts - idleLast < 30) return;
+  idleLast = ts;
   const t = performance.now()/1000, st = model.style;
   st.setProperty('--yaw',      (Math.sin(t*0.62)*0.34 + Math.sin(t*0.21)*0.12).toFixed(3));
   st.setProperty('--pitch',    (Math.sin(t*0.5+1)*0.20).toFixed(3));
@@ -1973,6 +1981,7 @@ function spawnBurst(x,y){
   for (let i=0;i<70;i++){ const a=Math.random()*7, s=2+Math.random()*7;
     parts.push({x,y, vx:Math.cos(a)*s, vy:Math.sin(a)*s, g:0.05, life:1,
       decay:0.012+Math.random()*0.02, size:4+Math.random()*5, warm:Math.random()}); }
+  ensureFx();
 }
 function drawOrb(x,y,r,a){
   const g = fxx.createRadialGradient(x,y,0,x,y,Math.max(1,r));
@@ -2008,10 +2017,12 @@ function drawShock(x,y,R,a){
   fxx.beginPath(); fxx.arc(x,y,Math.max(2,R+lw),0,7); fxx.stroke();
   fxx.restore();
 }
-function triggerRelease(cx,cy){ if (rel) return; rel = {t0:performance.now(), cx, cy, boomed:false}; lastRelease = performance.now(); }
+function triggerRelease(cx,cy){ if (rel) return; rel = {t0:performance.now(), cx, cy, boomed:false}; lastRelease = performance.now(); ensureFx(); }
 
+let fxRunning = false;
+/* エフェクトが要るときだけ始動。アイドルでは回さない(全画面clearRect+RAFを止める) */
+function ensureFx(){ if (!fxRunning){ fxRunning = true; requestAnimationFrame(fxLoop); } }
 function fxLoop(){
-  requestAnimationFrame(fxLoop);
   const W = fxc.width, H = fxc.height, now = performance.now();
   fxx.clearRect(0,0,W,H);
 
@@ -2111,8 +2122,13 @@ function fxLoop(){
     fxx.beginPath(); fxx.arc(p.x,p.y,Math.max(0.5,p.size*p.life),0,7); fxx.fill();
   }
   fxx.globalCompositeOperation='source-over';
+
+  /* 描くものが残っていれば継続、無ければ停止(直前のclearRectで画面はクリア済み) */
+  if (parts.length>0 || charge>0.001 || forceCharge>0 || rel || hands.length>0)
+    requestAnimationFrame(fxLoop);
+  else fxRunning = false;
 }
-requestAnimationFrame(fxLoop);
+/* 起動時は回さない。手検出/ボタン/パーティクル発生時に ensureFx() で始動する */
 
 /* ---- テロップ ---- */
 let telopTimer=null;
@@ -2194,7 +2210,7 @@ function henshin(){
 }
 
 /* ---- オリモダンテ (ボタン/キー発動: 手なしでも撮れる) ---- */
-function orimodante(){ if (rel) return; forceCharge=1; chargeHoldUntil=0; telop('オリモダンテ！', 1600); }
+function orimodante(){ if (rel) return; forceCharge=1; chargeHoldUntil=0; ensureFx(); telop('オリモダンテ！', 1600); }
 
 /* ---- しんか (進化) ---- */
 let form2=false, shinkaBusy=false;
