@@ -52,27 +52,72 @@
   function updateBadge(){
     let n = 0;
     pcs.forEach(pc => { if (pc.connectionState === 'connected') n++; });
+    const f = fps ? ' ' + fps + 'fps' : '';
     badge.textContent = n > 0
-      ? '🔴 仮想カメラ配信中 (接続' + n + ') この窓は閉じない'
-      : '🟠 仮想カメラ待機中 (Meet/YouTube側でCSS VTuber Cameraを選択)';
+      ? '🔴 配信中 (接続' + n + ')' + f + ' — この窓は閉じない'
+      : '🟠 待機中 (Meet/YouTubeでCSS VTuber Cameraを選択)' + f;
     pokeBadge();
   }
 
   btn.addEventListener('click', async () => {
     try {
       capture = await navigator.mediaDevices.getDisplayMedia({
-        video: {frameRate: 30},
+        /* 解像度/fpsを固定して軽量化: Retina(2x)の巨大フレームや60fpsで詰まるのを防ぐ。
+           Meet/YouTube側は結局720p程度に落とすので720p24で十分。 */
+        video: {
+          width:     {ideal: 1280, max: 1280},
+          height:    {ideal: 720,  max: 720},
+          frameRate: {ideal: 24,   max: 30}
+        },
         audio: false,
         preferCurrentTab: true,        /* ダイアログで「このタブ」が最初に出る */
         selfBrowserSurface: 'include'
       });
+      /* 環境によりmaxが効かないことがあるので明示的に再適用(ベストエフォート) */
+      try { await capture.getVideoTracks()[0].applyConstraints({
+        width:{max:1280}, height:{max:720}, frameRate:{max:30}
+      }); } catch (_) {}
     } catch (err) { log('キャプチャ開始キャンセル/失敗:', err.name); return; }
     log('キャプチャ開始');
     btn.style.display = 'none';
     badge.style.display = 'block';
+    startFpsMeter();
     updateBadge();
-    capture.getVideoTracks()[0].addEventListener('ended', () => { log('キャプチャ終了'); stopAll(); });
+    capture.getVideoTracks()[0].addEventListener('ended', () => { log('キャプチャ終了'); stopFpsMeter(); stopAll(); });
   });
+
+  /* ===== 実測fps表示: キャプチャ映像をrVFCで数え、バッジに小さく出す ===== */
+  let fpsVid = null, fpsRvfc = 0, fpsCount = 0, fpsWinT = 0, fps = 0, fpsFallT = 0;
+  function startFpsMeter(){
+    stopFpsMeter();
+    const st = capture; if (!st) return;
+    fpsVid = document.createElement('video');
+    fpsVid.muted = true; fpsVid.playsInline = true;
+    fpsVid.srcObject = new MediaStream([st.getVideoTracks()[0]]);
+    fpsVid.play().catch(() => {});
+    fpsWinT = performance.now(); fpsCount = 0;
+    if (fpsVid.requestVideoFrameCallback) {
+      const tick = () => {
+        fpsCount++;
+        const now = performance.now();
+        if (now - fpsWinT >= 1000) { fps = Math.round(fpsCount * 1000 / (now - fpsWinT)); fpsCount = 0; fpsWinT = now; updateBadge(); }
+        fpsRvfc = fpsVid.requestVideoFrameCallback(tick);
+      };
+      fpsRvfc = fpsVid.requestVideoFrameCallback(tick);
+    } else {
+      /* rVFC非対応環境: トラックの公称frameRateを表示(実測ではない旨は概算) */
+      fpsFallT = setInterval(() => {
+        const s = capture && capture.getVideoTracks()[0] && capture.getVideoTracks()[0].getSettings();
+        fps = s && s.frameRate ? Math.round(s.frameRate) : 0; updateBadge();
+      }, 1000);
+    }
+  }
+  function stopFpsMeter(){
+    if (fpsVid && fpsRvfc && fpsVid.cancelVideoFrameCallback) { try { fpsVid.cancelVideoFrameCallback(fpsRvfc); } catch (_) {} }
+    if (fpsFallT) { clearInterval(fpsFallT); fpsFallT = 0; }
+    if (fpsVid) { try { fpsVid.srcObject = null; } catch (_) {} fpsVid = null; }
+    fps = 0;
+  }
 
   const send = (to, m) => { try { chrome.runtime.sendMessage({dir: 'toConsumer', to, m}).catch(() => {}); } catch (_) {} };
 

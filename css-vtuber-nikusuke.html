@@ -457,6 +457,38 @@ body.obs #panel{display:none}
          drop-shadow(calc(var(--line-in)*-1px) 0 0 var(--line))
          drop-shadow(0 calc(var(--line-in)*1px) 0 var(--line))
          drop-shadow(0 calc(var(--line-in)*-1px) 0 var(--line))}
+
+/* ===== 配信軽量プロファイル (stream-lite) =====
+   Meet/YouTubeで「重くて映らない」対策。?obs / ?live で既定ON、?full で全部入りに戻る。
+   JS側はこのクラスを付けるだけ(描画ロジックはすべてCSS/絶対原則)。
+   ねらい: 毎フレームのフィルタ再ラスタライズ回数を 5グループ→外周1枚 に削減し、
+   判別しにくい微小アイドルアニメを止める。生命感(浮遊/まばたき/口パク)は死守。 */
+/* (1) フィルタは「外周線1枚 + 目の内側線1枚」の計2層に統合。
+   面積の大きい内側線フィルタ(顔+耳/体/襟足)を省き、毎フレームの再ラスタライズを激減。
+   目の縁取り(メガネ型union=キャラのキー)は面積が小さく安いので残す。 */
+#model.stream-lite .facegrp,
+#model.stream-lite .bob>.bodygrp,
+#model.stream-lite #decoBack{filter:none!important}
+/* (2) 動きが小さく配信で判別しにくいアイドルアニメを停止
+   (呼吸/体ゆれ/腕振り/髪ゆれ/視線泳ぎ)。idle-bob・まばたき・口パクは残す。 */
+#model.stream-lite.idle-breathe .tee,
+#model.stream-lite.idle-breathe .bodygrp .v2,
+#model.stream-lite.idle-breathe .bodygrp .v3,
+#model.stream-lite.idle-breathe .bodygrp .v4,
+#model.stream-lite.body-sway .bob>.bodygrp,
+#model.stream-lite.arm-swing .bodygrp .v5,
+#model.stream-lite.arm-swing .bodygrp .v6,
+#model.stream-lite.arm-swing .bodygrp .v7,
+#model.stream-lite.arm-swing .bodygrp .v8,
+#model.stream-lite.hair-sway .b4,
+#model.stream-lite.hair-sway .b2,
+#model.stream-lite.hair-sway .hair .u1,
+#model.stream-lite.hair-sway .hair .n34,
+#model.stream-lite.auto-gaze .pupil,
+#model.stream-lite.auto-blink.auto-gaze #deco .u3,
+#model.stream-lite.auto-blink.auto-gaze #deco .n15{animation:none!important}
+/* (3) 合成ヒント: 揺れる外周ラッパは自前レイヤーに載せてtranslateを安く合成 */
+#model.stream-lite .bob{will-change:transform}
 #deco .n12{left:89px;top:174px;width:57px;height:56px;border-radius:50%;background:#fff}
 .hair .n2{left:147px;top:77px;width:55px;height:67px;transform:rotate(-68deg);clip-path:polygon(55% 0%,62% 12%,68% 26%,73% 40%,77% 53%,78% 64%,75% 76%,68% 88%,57% 96%,45% 100%,33% 96%,25% 87%,21% 75%,22% 62%,26% 49%,33% 35%,41% 21%,48% 10%)}
 #deco .n11{left:141px;top:171px;width:65px;height:61px;border-radius:50%;background:#fff}
@@ -847,6 +879,10 @@ const $ = id => document.getElementById(id);
 /* ライブモード: ?live でパネル非表示・透過・縁取りON・カメラ自動起動 (配信用) */
 const QP = new URLSearchParams(location.search);
 const LIVE = QP.has('live');
+/* 配信用途(?obs/?live)は既定で軽量プロファイル。?full を付けたときだけ全部入り。
+   エディタモード(パラメータなし)は従来どおりフル(調整の見た目を正確に) */
+const STREAM = QP.has('obs') || LIVE;
+if (STREAM && !QP.has('full')) model.classList.add('stream-lite');
 
 /* data-var付きスライダー/カラー → CSS変数 */
 document.querySelectorAll('#panel input[type=range][data-var]').forEach(el => {
@@ -1366,8 +1402,13 @@ stage.addEventListener('wheel', e => {
 const camBtn = $('camBtn'), camStat = $('camStat');
 let cam = null;
 const TS = {yaw:0, pitch:0, roll:0, eol:1, eor:1, mo:0, mw:0, px:0, py:0};
+/* 顔検出を約20fpsに間引くための「生の目標値」。間のrAFはこの目標へEMAで補間する */
+const RAW = {yaw:0, pitch:0, roll:0, eol:1, eor:1, mo:0, mw:0, px:0, py:0, smile:false};
+/* track中継のスロットル状態 (変化が閾値未満/直近40ms内はskip) */
+let lastRelay = 0, relayPrev = null;
 /* トラッキング設定 (controllerから {type:'cfg'} で変更できる) */
-const CFG = {eyeGain: 1.4, smooth: .15, pose: true};
+/* pose(手検出)は既定OFF: Pose Landmarker常時実行は重い。使うときだけcontrollerのトグルON */
+const CFG = {eyeGain: 1.4, smooth: .15, pose: false};
 /* 目の開きの自動キャリブレーション: 各目の「普段の開き」を追いかけて正規化する。
    本人の目が細くても、普段の状態=全開(1.0)として扱われる */
 const NEU = {l: .5, r: .5};
@@ -1464,8 +1505,18 @@ async function startCam(){
 function camLoop(){
   if (!cam) return;
   cam.raf = requestAnimationFrame(camLoop);
-  if (cam.video.currentTime === cam.last) return;
-  cam.last = cam.video.currentTime;
+  const now = performance.now();
+  /* 顔検出は約20fps(48ms間隔)に間引く: MediaPipe推論(GPU)が最重量なので
+     ここを1/3にするのが効く。間のフレームは applyTrack のEMA補間で滑らかに保つ */
+  if (cam.video.currentTime !== cam.last && now - (cam.lastDet || 0) >= 48) {
+    cam.lastDet = now;
+    cam.last = cam.video.currentTime;
+    detectFace();
+  }
+  applyTrack(now);
+}
+/* 顔検出1回ぶん: 生の目標値を RAW に書き込む(適用/中継は applyTrack が毎フレーム担当) */
+function detectFace(){
   const res = cam.lm.detectForVideo(cam.video, performance.now());
   if (!res.faceBlendshapes || !res.faceBlendshapes.length) return;
   const b = res.faceBlendshapes[0].categories;
@@ -1482,7 +1533,7 @@ function camLoop(){
     pitch = Math.asin(Math.max(-1, Math.min(1, m[9]))) * 180 / Math.PI;
     roll = Math.atan2(m[1], m[0]) * 180 / Math.PI;
   }
-  /* 鏡のように動くミラー写像 + 正面補正 + 応答カーブ + 適応平滑化 */
+  /* 鏡のように動くミラー写像 + 正面補正 + 応答カーブ */
   const ry = clamp1(-yaw / 25), rp = clamp1(-pitch / 25), rr = clamp1(roll / 30);
   if (NEUP.n < 30) {   /* 起動/リセット直後は平均を取って正面を学習 */
     NEUP.yaw += (ry - NEUP.yaw) / (NEUP.n + 1);
@@ -1490,21 +1541,36 @@ function camLoop(){
     NEUP.roll += (rr - NEUP.roll) / (NEUP.n + 1);
     NEUP.n++;
   }
-  TS.yaw = step(TS.yaw, curve(ry - NEUP.yaw));
-  TS.pitch = step(TS.pitch, curve(rp - NEUP.pitch));
-  TS.roll = step(TS.roll, curve(rr - NEUP.roll));
-  TS.px = step(TS.px, clamp1(-gx * 1.5));
-  TS.py = step(TS.py, clamp1(gy * 1.5));
+  RAW.yaw = curve(ry - NEUP.yaw);
+  RAW.pitch = curve(rp - NEUP.pitch);
+  RAW.roll = curve(rr - NEUP.roll);
+  RAW.px = clamp1(-gx * 1.5);
+  RAW.py = clamp1(gy * 1.5);
   /* 左右別まばたき (ミラー: モデル左目=本人の右目) + 自動キャリブレーション */
   const rawL = 1 - Math.min(1, bs(b,'eyeBlinkRight') * CFG.eyeGain);
   const rawR = 1 - Math.min(1, bs(b,'eyeBlinkLeft') * CFG.eyeGain);
   NEU.l = Math.max(.2, rawL > NEU.l ? lerp(NEU.l, rawL, .3) : lerp(NEU.l, rawL, .004));
   NEU.r = Math.max(.2, rawR > NEU.r ? lerp(NEU.r, rawR, .3) : lerp(NEU.r, rawR, .004));
-  TS.eol = lerp(TS.eol, Math.min(1, rawL / NEU.l), .6);
-  TS.eor = lerp(TS.eor, Math.min(1, rawR / NEU.r), .6);
+  RAW.eol = Math.min(1, rawL / NEU.l);
+  RAW.eor = Math.min(1, rawR / NEU.r);
   /* 口: 縦=jawOpen、横=にやり(+)/すぼめ(-) */
-  TS.mo = lerp(TS.mo, Math.min(1, jaw * 1.6), .5);
-  TS.mw = lerp(TS.mw, Math.max(-.45, Math.min(.9, smile * .9 - bs(b,'mouthPucker') * .6)), .4);
+  RAW.mo = Math.min(1, jaw * 1.6);
+  RAW.mw = Math.max(-.45, Math.min(.9, smile * .9 - bs(b,'mouthPucker') * .6));
+  RAW.smile = smile > .6;
+  model.classList.toggle('exp-smile', RAW.smile);
+  try { poseLoop(); } catch (_) {}
+}
+/* 毎フレーム: RAW目標へ適応平滑化/EMAで寄せてCSS変数へ書き込む(20fps検出の間を補間) */
+function applyTrack(now){
+  TS.yaw = step(TS.yaw, RAW.yaw);
+  TS.pitch = step(TS.pitch, RAW.pitch);
+  TS.roll = step(TS.roll, RAW.roll);
+  TS.px = step(TS.px, RAW.px);
+  TS.py = step(TS.py, RAW.py);
+  TS.eol = lerp(TS.eol, RAW.eol, .35);
+  TS.eor = lerp(TS.eor, RAW.eor, .35);
+  TS.mo = lerp(TS.mo, RAW.mo, .3);
+  TS.mw = lerp(TS.mw, RAW.mw, .25);
   const vars = {
     '--yaw': TS.yaw.toFixed(3), '--pitch': TS.pitch.toFixed(3), '--roll': TS.roll.toFixed(3),
     '--eye-open-l': TS.eol.toFixed(3), '--eye-open-r': TS.eor.toFixed(3),
@@ -1514,18 +1580,24 @@ function camLoop(){
   };
   const st = model.style;
   Object.keys(vars).forEach(k => st.setProperty(k, vars[k]));
-  model.classList.toggle('exp-smile', smile > .6);
-  try { poseLoop(); } catch (_) {}
-  /* 別窓ビューア連携: トラッキング結果を親(controller)へ送り、中継してもらう */
-  if (window.parent !== window) {
-    try {
-      window.parent.postMessage({
-        type: 'track', vars,
-        poses: POSES.filter(p => model.classList.contains('pose-' + p)),
-        smile: smile > .6
-      }, '*');
-    } catch (_) {}
+  /* 別窓ビューアへ中継。変化が小さいフレーム/直近40ms内はスキップ(postMessage/BC間引き) */
+  if (window.parent !== window) relayTrack(now, vars);
+}
+function relayTrack(now, vars){
+  let big = !relayPrev;
+  if (relayPrev) {
+    for (const k in vars) { if (Math.abs(vars[k] - relayPrev[k]) > 0.004) { big = true; break; } }
   }
+  if (!big || now - lastRelay < 40) return;   /* 最大約24fps + 静止フレームは送らない */
+  lastRelay = now;
+  relayPrev = vars;
+  try {
+    window.parent.postMessage({
+      type: 'track', vars,
+      poses: POSES.filter(p => model.classList.contains('pose-' + p)),
+      smile: RAW.smile
+    }, '*');
+  } catch (_) {}
 }
 
 /* ===== ポーズ検出: 手首と肩の位置関係から手上げ/バイバイ/考えるを判定 =====

@@ -172,7 +172,7 @@ body.viewer #panel{display:none}
   <div class="row" style="margin-top:8px"><label>まばたき感度</label><input type="range" id="gainSl" min="60" max="300" value="140"><output>1.4</output></div>
   <div class="row"><label>反応速度</label><input type="range" id="smoothSl" min="5" max="50" value="15"><output>0.15</output></div>
   <div class="toggles" style="margin-top:4px">
-    <label><input type="checkbox" id="poseChk" checked> カメラで手も検出 (ポーズ連動)</label>
+    <label><input type="checkbox" id="poseChk"> カメラで手も検出 (ポーズ連動・重いので既定OFF)</label>
   </div>
   <p class="hint" style="margin-top:6px">目の開きは「普段の開き具合」を自動で覚えて正規化します。
     半目になりがちなら、まばたき感度を下げてみてください</p>
@@ -331,7 +331,7 @@ const state = {
           'mode-groove':false},
   poses: {'raise-l':false,'raise-r':false,'wave':false,'think':false,'front':false},
   items: {cup:false, light:false},
-  cfg: {eyeGain:1.4, smooth:.15, pose:true},
+  cfg: {eyeGain:1.4, smooth:.15, pose:false},
   vars: {'--roll':0,'--eye-open':1,'--zoom':1,'--beat':.5},
   follow: true, cam: false
 };

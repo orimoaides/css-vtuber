@@ -23,14 +23,43 @@
   let remoteVideo = null, remoteStream = null;
   let statusMsg = 'ビューアに接続中…';
 
+  let statusTimer = 0, rvfcVid = null, rvfcId = 0;
   function ensureCanvas(){
     if (camStream) return;
     canvas = document.createElement('canvas');
     canvas.width = W; canvas.height = H;
     cctx = canvas.getContext('2d');
-    setInterval(draw, 33);
     draw();
-    camStream = canvas.captureStream(30);
+    /* 出力は24fpsに固定(ビューア側の24fpsと揃える。Meet再エンコード負荷を軽減) */
+    camStream = canvas.captureStream(24);
+    scheduleDraw();
+  }
+  /* 描画スケジューラ:
+     - 映像受信中 → ビューアのフレーム到着に合わせて requestVideoFrameCallback で描画
+       (常時33ms=30fpsの空回し再描画をやめ、来た分だけ描く)
+     - 映像なし(案内画面) → テキストが静的なので低速interval(500ms)で十分
+     - rVFC非対応環境 → 33ms interval にフォールバック */
+  function scheduleDraw(){
+    const live = remoteVideo && remoteVideo.readyState >= 2;
+    if (live && remoteVideo.requestVideoFrameCallback) {
+      if (statusTimer) { clearInterval(statusTimer); statusTimer = 0; }
+      if (rvfcVid === remoteVideo) return;
+      rvfcVid = remoteVideo;
+      const tick = () => {
+        if (rvfcVid !== remoteVideo) return;   /* 映像が切れた/差し替わったら抜ける */
+        draw();
+        rvfcId = remoteVideo.requestVideoFrameCallback(tick);
+      };
+      rvfcId = remoteVideo.requestVideoFrameCallback(tick);
+    } else if (live) {
+      /* rVFC非対応: 従来どおり33ms interval */
+      rvfcVid = null;
+      if (!statusTimer) statusTimer = setInterval(draw, 33);
+    } else {
+      /* 案内画面: 低速で回し、映像が来たら次tickでrVFCへ切替 */
+      rvfcVid = null;
+      if (!statusTimer) statusTimer = setInterval(() => { draw(); scheduleDraw(); }, 500);
+    }
   }
   function draw(){
     if (!cctx) return;
@@ -76,7 +105,7 @@
       statusMsg = 'ビューア窓の「🎥 仮想カメラ開始」を押してください';
       log('ビューアから応答なし。4秒後に再接続します (ビューア窓で🎥を押せば映ります)');
       scheduleRetry();
-    }, 8000);
+    }, 15000);   /* 重い環境ではビューアの初期化に時間がかかるため8秒→15秒 */
     pc.ontrack = ev => {
       clearTimeout(to);
       waiting = false;
@@ -84,12 +113,19 @@
       remoteVideo = document.createElement('video');
       remoteVideo.muted = true;
       remoteVideo.playsInline = true;
+      /* rVFCが確実に発火するようDOMに置く(非表示・1x1)。captureStreamのソースはCanvas側 */
+      remoteVideo.style.cssText = 'position:fixed;left:-2px;top:-2px;width:1px;height:1px;opacity:0;pointer-events:none;z-index:-1';
       remoteVideo.srcObject = remoteStream;
+      document.documentElement.appendChild(remoteVideo);
       remoteVideo.play().catch(() => {});
+      remoteVideo.addEventListener('loadeddata', scheduleDraw, {once: true});
+      scheduleDraw();
       ev.track.addEventListener('ended', () => {
-        remoteVideo = null; remoteStream = null;
+        try { remoteVideo.remove(); } catch (_) {}
+        remoteVideo = null; remoteStream = null; rvfcVid = null;
         statusMsg = 'ビューアが停止しました。再接続します…';
         log('ビューア停止 → 再接続待ち');
+        scheduleDraw();
         scheduleRetry();
       });
       log('ビューアの映像を受信しました');
