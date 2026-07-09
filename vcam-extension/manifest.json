@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "CSS VTuber Camera",
-  "version": "1.0",
+  "version": "1.1",
   "description": "CSS VTuberモデルを Google Meet / YouTube Live(ウェブカメラ配信) のカメラとして使う仮想カメラ",
   "permissions": ["tabs"],
   "background": { "service_worker": "bg.js" },
@@ -18,7 +18,7 @@
       "run_at": "document_start"
     },
     {
-      "matches": ["http://localhost:8321/*"],
+      "matches": ["http://localhost:8321/*", "https://orimoaides.github.io/*"],
       "js": ["viewer.js"]
     }
   ]
