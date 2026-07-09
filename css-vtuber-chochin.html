@@ -489,6 +489,53 @@ body.obs #panel{display:none}
 #model.stream-lite.auto-blink.auto-gaze #deco .n15{animation:none!important}
 /* (3) 合成ヒント: 揺れる外周ラッパは自前レイヤーに載せてtranslateを安く合成 */
 #model.stream-lite .bob{will-change:transform}
+/* ===== 配信ミニマムモード (stream-min) : Meet第2弾 =====
+   stream-liteに上乗せ。配信中に判別しにくい/重い演出を既定OFF。
+   死守する生命線: まばたき・口パク(リップシンク)・トラッキング追従。
+   止めるもの: idle-bob(浮遊)・魔法系FX(glitch/scatter)・ハート目鼓動/星目回転。 */
+#model.stream-min.idle-bob .bob{animation:none!important}
+/* 魔法系FX: glitchのhue-rotate/invert・scatterの拡散を無反応化(発火しても止める) */
+#model.stream-min.fx-glitch .bob{animation:none!important;filter:none!important;clip-path:none!important}
+#model.stream-min.fx-scatter .hair .b1,#model.stream-min.fx-scatter .hair .b2,
+#model.stream-min.fx-scatter .hair .b3,#model.stream-min.fx-scatter .hair .b4,
+#model.stream-min.fx-scatter .hair .b8,#model.stream-min.fx-scatter .hair .u1,
+#model.stream-min.fx-scatter .hair .n2,#model.stream-min.fx-scatter .hair .n34,
+#model.stream-min.fx-scatter .ear.l,#model.stream-min.fx-scatter .ear.r,
+#model.stream-min.fx-scatter #deco .n12,#model.stream-min.fx-scatter #deco .n11,
+#model.stream-min.fx-scatter #deco .u3,#model.stream-min.fx-scatter #deco .n15,
+#model.stream-min.fx-scatter #deco .n1,#model.stream-min.fx-scatter .mouth,
+#model.stream-min.fx-scatter #decoBack{animation:none!important}
+/* ハート目の鼓動・星目の回転を静止版に(表情の形/色は残す) */
+#model.stream-min.exp-heart #deco .xeyeL,#model.stream-min.exp-heart #deco .xeyeR,
+#model.stream-min.exp-star #deco .xeyeL,#model.stream-min.exp-star #deco .xeyeR{animation:none!important}
+/* ===== 二重描画停止 : controllerプレビュー用 (paused-preview) =====
+   別窓ビューアが配信を開始したら、controller自身のiframeプレビューは
+   常時アイドルアニメ(浮遊/まばたき/視線/呼吸/髪ゆれ/腕/体ゆれ)を全停止。
+   表情・ポーズ・トラッキング(=CSS変数/クラス駆動)の反映は生かす(操作feedback死守)。 */
+#model.paused-preview.idle-bob .bob,
+#model.paused-preview.idle-breathe .tee,
+#model.paused-preview.idle-breathe .bodygrp .v2,
+#model.paused-preview.idle-breathe .bodygrp .v3,
+#model.paused-preview.idle-breathe .bodygrp .v4,
+#model.paused-preview.body-sway .bob>.bodygrp,
+#model.paused-preview.arm-swing .bodygrp .v5,
+#model.paused-preview.arm-swing .bodygrp .v6,
+#model.paused-preview.arm-swing .bodygrp .v7,
+#model.paused-preview.arm-swing .bodygrp .v8,
+#model.paused-preview.hair-sway .b4,
+#model.paused-preview.hair-sway .b2,
+#model.paused-preview.hair-sway .hair .u1,
+#model.paused-preview.hair-sway .hair .n34,
+#model.paused-preview.auto-gaze .pupil,
+#model.paused-preview.auto-gaze #deco .u3,
+#model.paused-preview.auto-gaze #deco .n15,
+#model.paused-preview.auto-blink .eye,
+#model.paused-preview.auto-blink #deco .n12,
+#model.paused-preview.auto-blink #deco .n11,
+#model.paused-preview.auto-blink #deco .u3,
+#model.paused-preview.auto-blink #deco .n15,
+#model.paused-preview.auto-blink #deco .xlidL,
+#model.paused-preview.auto-blink #deco .xlidR{animation:none!important}
 #deco .n12{left:89px;top:174px;width:57px;height:56px;border-radius:50%;background:#fff}
 .hair .n2{left:147px;top:77px;width:55px;height:67px;transform:rotate(-68deg);clip-path:polygon(55% 0%,62% 12%,68% 26%,73% 40%,77% 53%,78% 64%,75% 76%,68% 88%,57% 96%,45% 100%,33% 96%,25% 87%,21% 75%,22% 62%,26% 49%,33% 35%,41% 21%,48% 10%)}
 #deco .n11{left:141px;top:171px;width:65px;height:61px;border-radius:50%;background:#fff}
@@ -1295,6 +1342,10 @@ window.addEventListener('message', e => {
     if (m.vars && typeof m.vars === 'object') Object.keys(m.vars).forEach(k => setVarSafe(k, m.vars[k]));
     if (Array.isArray(m.poses)) POSES.forEach(p => model.classList.toggle('pose-' + p, m.poses.includes(p)));
     if (typeof m.smile === 'boolean') model.classList.toggle('exp-smile', m.smile);
+  } else if (m.type === 'smode') {
+    /* 配信ミニマム/二重描画停止のクラス切替のみ(絶対原則: JSはクラスON/OFFだけ) */
+    if (m.name === 'min') model.classList.toggle('stream-min', !!m.on);
+    else if (m.name === 'preview') model.classList.toggle('paused-preview', !!m.on);
   } else if (m.type === 'cam') {
     if (m.on && !cam) startCam();
     else if (!m.on && cam) stopCam();

@@ -30,8 +30,8 @@
     canvas.width = W; canvas.height = H;
     cctx = canvas.getContext('2d');
     draw();
-    /* 出力は24fpsに固定(ビューア側の24fpsと揃える。Meet再エンコード負荷を軽減) */
-    camStream = canvas.captureStream(24);
+    /* 出力は20fpsに固定(ビューア側の20fpsと揃える。Meet再エンコード負荷をさらに軽減) */
+    camStream = canvas.captureStream(20);
     scheduleDraw();
   }
   /* 描画スケジューラ:
@@ -52,9 +52,9 @@
       };
       rvfcId = remoteVideo.requestVideoFrameCallback(tick);
     } else if (live) {
-      /* rVFC非対応: 従来どおり33ms interval */
+      /* rVFC非対応: 20fps相当の50ms interval (第2弾で33ms=30fps→50ms=20fpsに削減) */
       rvfcVid = null;
-      if (!statusTimer) statusTimer = setInterval(draw, 33);
+      if (!statusTimer) statusTimer = setInterval(draw, 50);
     } else {
       /* 案内画面: 低速で回し、映像が来たら次tickでrVFCへ切替 */
       rvfcVid = null;

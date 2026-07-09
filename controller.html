@@ -195,6 +195,12 @@ body.viewer #panel{display:none}
     自分のプレビューでは元の向きに見えます (相手には反転が伝わります)</p>
   <button class="act" id="detachBtn">モデルを別窓で開く</button>
   <p class="hint" style="margin-top:6px">別窓にも操作が同時に反映されます。別窓側はモデルのみの表示。</p>
+
+  <h2>配信ミニマム (Meet軽量化)</h2>
+  <button class="act" id="streamMinBtn">🎬 配信ミニマム: OFF</button>
+  <p class="hint" style="margin-top:6px">ONにすると、このプレビューの常時アニメ(浮遊/まばたき等)を止めて
+    二重描画を解消し、配信側は浮遊・魔法FX・ハート/星の連続アニメをOFF。
+    まばたき・口パク・表情・トラッキングは残ります。仮想カメラ開始時は自動でONになります。</p>
 </aside>
 
 <script>
@@ -213,7 +219,7 @@ const MODELS = {
 };
 /* ビューアが自iframeへ転送してよいメッセージ。'cam' は含めない
    (カメラはcontroller側モデルだけが起動し、結果は 'track' で中継される) */
-const ALLOW = ['exp','var','vars','anim','pose','emo','item','fx','cfg','track'];
+const ALLOW = ['exp','var','vars','anim','pose','emo','item','fx','cfg','track','smode'];
 /* 別窓連携用チャンネル: opener経由のpostMessageに加えて、
    開き方によらず同一ブラウザ内で届くBroadcastChannelでも同期する */
 const bc = new BroadcastChannel('cssvtuber-ctrl');
@@ -318,6 +324,18 @@ if (VIEWER) {
     else if (m.type === 'cam-state' && window.opener)
       window.opener.postMessage(m, '*');                       /* カメラ成否を親へ中継 */
   });
+
+  /* ===== 配信開始/停止の検出 (二重描画停止のトリガ) =====
+     拡張(viewer.js)が仮想カメラのキャプチャ開始/停止時に window へ流す
+     {__vcamStream:{on}} を受け、(1)このビューア自身のモデルへ stream-min を適用、
+     (2)controller本体へ stream-state を通知して向こうのプレビューを paused-preview に。 */
+  window.addEventListener('message', e => {
+    if (!e.data || !e.data.__vcamStream) return;
+    const on = !!e.data.__vcamStream.on;
+    try { frame.contentWindow.postMessage({type:'smode', name:'min', on}, '*'); } catch (_) {}
+    try { bc.postMessage({type:'stream-state', on}); } catch (_) {}
+    if (window.opener) window.opener.postMessage({type:'stream-state', on}, '*');
+  });
 }
 
 /* ===== コントローラーモード ===== */
@@ -347,7 +365,9 @@ function send(m){
   relay(m);
 }
 bc.onmessage = ev => {
-  if (ev.data && ev.data.type === 'viewer-ready') sendAll();
+  if (!ev.data) return;
+  if (ev.data.type === 'viewer-ready') sendAll();
+  else if (ev.data.type === 'stream-state') setStreamMin(!!ev.data.on);
 };
 function sendAll(){
   send({type:'exp', name: state.exp});
@@ -356,12 +376,32 @@ function sendAll(){
   Object.keys(state.items).forEach(k => send({type:'item', name:k, on: state.items[k]}));
   Object.keys(state.cfg).forEach(k => send({type:'cfg', key:k, value: state.cfg[k]}));
   send({type:'vars', vars: state.vars});
+  /* 配信ミニマムが有効なら、再読込したモデル(切替/再接続)にも状態を焼き直す。
+     preview は自iframe専用・min は別窓ビューア専用(非対称) */
+  if (streamMin) {
+    try { frame.contentWindow.postMessage({type:'smode', name:'preview', on:true}, '*'); } catch (_) {}
+    relay({type:'smode', name:'min', on:true});
+  }
+}
+/* ===== 配信ミニマム/二重描画停止 =====
+   ON: (1)controller自身のiframeプレビュー→paused-preview(常時アニメ全停止/二重描画解消)
+       (2)別窓ビューアの配信モデル→stream-min(浮遊/魔法FX/ハート星の連続アニメOFF)
+   表情・ポーズ・トラッキング・まばたき・口パクは両方で生存。 */
+let streamMin = false;
+function setStreamMin(on){
+  on = !!on;
+  streamMin = on;
+  try { frame.contentWindow.postMessage({type:'smode', name:'preview', on}, '*'); } catch (_) {}
+  relay({type:'smode', name:'min', on});
+  const b = $('streamMinBtn');
+  if (b) { b.classList.toggle('on', on); b.textContent = on ? '🎬 配信ミニマム: ON' : '🎬 配信ミニマム: OFF'; }
 }
 /* モデル(自分のiframe/別窓)の準備ができたら状態を流し込む。カメラ成否も受ける。
    自iframeのトラッキング結果('track')は別窓へ中継する */
 window.addEventListener('message', e => {
   const m = e.data, t = m && m.type;
   if (t === 'vtuber-ready' || t === 'viewer-ready') sendAll();
+  else if (t === 'stream-state') setStreamMin(!!m.on);   /* ビューアの配信開始/停止を反映 */
   else if (t === 'track' && e.source === frame.contentWindow) relay(m);
   else if (t === 'cam-state') {
     state.cam = !!m.on;
@@ -633,6 +673,9 @@ function setModel(name, init){
 }
 $('modelSel').addEventListener('change', e => setModel(e.target.value));
 setModel(QP.get('model') || localStorage.getItem(MODEL_KEY) || 'orimo', true);
+
+/* --- 配信ミニマム 手動トグル (画面共有ルート=拡張なし用のフォールバック/上書き) --- */
+$('streamMinBtn').addEventListener('click', () => setStreamMin(!streamMin));
 
 /* --- 別窓ビューア --- */
 $('detachBtn').addEventListener('click', () => {

@@ -41,12 +41,17 @@
   }
   window.addEventListener('pointermove', pokeBadge);
 
+  /* 配信の開始/停止をページ(controller.html?viewer)へ通知。
+     ページ側が二重描画停止(paused-preview)と配信ミニマム(stream-min)の引き金にする。 */
+  function notifyStream(on){ try { window.postMessage({__vcamStream: {on: !!on}}, '*'); } catch (_) {} }
+
   function stopAll(){
     capture = null;
     pcs.forEach(pc => { try { pc.close(); } catch (_) {} });
     pcs.clear();
     btn.style.display = '';
     badge.style.display = 'none';
+    notifyStream(false);
   }
 
   function updateBadge(){
@@ -67,7 +72,7 @@
         video: {
           width:     {ideal: 1280, max: 1280},
           height:    {ideal: 720,  max: 720},
-          frameRate: {ideal: 24,   max: 30}
+          frameRate: {ideal: 20,   max: 24}
         },
         audio: false,
         preferCurrentTab: true,        /* ダイアログで「このタブ」が最初に出る */
@@ -75,7 +80,7 @@
       });
       /* 環境によりmaxが効かないことがあるので明示的に再適用(ベストエフォート) */
       try { await capture.getVideoTracks()[0].applyConstraints({
-        width:{max:1280}, height:{max:720}, frameRate:{max:30}
+        width:{max:1280}, height:{max:720}, frameRate:{max:24}
       }); } catch (_) {}
     } catch (err) { log('キャプチャ開始キャンセル/失敗:', err.name); return; }
     log('キャプチャ開始');
@@ -83,6 +88,7 @@
     badge.style.display = 'block';
     startFpsMeter();
     updateBadge();
+    notifyStream(true);
     capture.getVideoTracks()[0].addEventListener('ended', () => { log('キャプチャ終了'); stopFpsMeter(); stopAll(); });
   });
 
